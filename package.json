@@ -1,0 +1,13 @@
+{
+  "name": "jarvis-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Geometry and POI regression tests; no npm runtime dependencies.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node tests/test_city_geometry.mjs && node tests/test_navigation_geometry.mjs && node tests/test_places.mjs"
+  }
+}

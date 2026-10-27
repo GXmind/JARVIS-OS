@@ -1,0 +1,39 @@
+# Credentials and local settings
+.env
+.env.*
+!.env.example
+config/.env
+config/*.tmp
+*.pem
+*.key
+# Runtime and private data
+.venv/
+venv/
+data/
+logs/
+cache/
+recordings/
+tmp/
+backups/
+__pycache__/
+*.py[cod]
+*.sqlite*
+*.db
+*.db-wal
+*.db-shm
+*.wav
+*.mp3
+*.m4a
+# Model outputs
+models/
+checkpoints/
+output/
+outputs/
+training/**/generated/
+training/**/output/
+training/**/outputs/
+# Local tools
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

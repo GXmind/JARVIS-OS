@@ -1,0 +1,2 @@
+# Optional richer PortAudio device backend. Native Windows MME works without it.
+sounddevice>=0.5.1,<0.6

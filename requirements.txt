@@ -1,0 +1,2 @@
+# MVP uses only Python standard library and Windows built-in APIs.
+# Optional alternative audio backend: pip install -r requirements-audio.txt

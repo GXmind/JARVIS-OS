@@ -1,0 +1,35 @@
+import assert from "node:assert/strict";
+import {inside,buildCityPositions} from "../src/jarvis/space_ui/city.js";
+import {extractTransit,resolveRouteCommand} from "../src/jarvis/space_ui/navigation.js";
+assert.equal(inside([1,1],[[0,0],[2,0],[2,2],[0,2]]),true);
+assert.equal(inside([4,1],[[0,0],[2,0],[2,2],[0,2]]),false);
+const path=[[120.60,31.31],[120.61,31.32]];
+const result=buildCityPositions({buildings:[{footprint:[[120.601,31.311],[120.602,31.311],[120.602,31.312],[120.601,31.311]],height:45}],roads:[{path}]},path);
+assert.ok(result.points.length>30);
+assert.ok(result.points.filter((_,i)=>i%3===1).some(y=>y>0),"Buildings must have true height");
+assert.ok(result.route.length>10);
+const transit=extractTransit({distance:2100,time:900,path,segments:[{instruction:"地铁换乘"}]});
+assert.equal(transit.seconds,900);
+assert.equal(transit.steps[0].instruction,"地铁换乘");
+console.log("3D footprint height, city particles and transit path checks passed.");
+const defaults={default_origin:"F2 保存的地址"};
+assert.equal(resolveRouteCommand({action:"route",destination:"虎丘景区"},defaults).origin,"F2 保存的地址");
+assert.equal(resolveRouteCommand({action:"route",origin:"本次指定起点",destination:"虎丘景区"},defaults).origin,"本次指定起点");
+assert.equal(resolveRouteCommand({action:"route",origin:"旧的默认地址",origin_source:"saved",destination:"虎丘景区"},defaults).origin,"F2 保存的地址");
+console.log("Saved-origin fallback, latest saved address and explicit-origin precedence passed.");
+
+const longRoute=[[120.60,31.31],[121.50,31.22]];
+const localLong=buildCityPositions({buildings:[{footprint:[[120.601,31.311],[120.602,31.311],[120.602,31.312],[120.601,31.311]],height:45}],roads:[]},longRoute,"start");
+assert.equal(localLong.extent,2600,"A long route must not shrink the default city");
+assert.equal(result.scale,localLong.scale);
+assert.ok(localLong.route.length<1000,"Local route points must be clipped and resampled");
+assert.ok(localLong.route.every(p=>Math.abs(p[0])<2.401&&Math.abs(p[2])<1.601));
+const overview=buildCityPositions({},longRoute,"overview");
+assert.ok(overview.extent>50000);
+console.log("Street-scale city stays large for long routes; clipped point budget and overview are valid.");
+
+assert.ok(result.streets.length>=6,"Road line geometry is independent from the building particle budget");
+assert.ok(result.streets.every(Number.isFinite));
+assert.equal(result.streets.length%6,0);
+assert.ok(localLong.edges.length>0,"Architecture must retain visible roof and vertical edges");
+console.log("Independent street network and architectural wire geometry passed.");
