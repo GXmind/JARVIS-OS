@@ -27,10 +27,11 @@ export function buildCityPositions(data,path,view="start",focus=null,options={})
  const cos=Math.cos(origin[1]*Math.PI/180),meters=p=>[(p[0]-origin[0])*111320*cos,(p[1]-origin[1])*111320];
  const routeM=basis.map(meters),extent=overview?frame.extent:localExtent;
  const scale=3.9/extent,bounds=[2.4/scale,1.6/scale],heightScale=Math.max(1,Math.min(32,Number(options.heightScale)||DEFAULT_HEIGHT_SCALE));
+ const particleBudget=Math.max(8000,Math.min(36000,Number(options.particleBudget)||36000));
  const points=[],colors=[],fades=[],edges=[],streets=[],arterials=[],paths=[],route=[],routeParts=[],labels=[];
- let quota=62000,used=0,visualMaxHeight=0;
+ let quota=36000,used=0,visualMaxHeight=0;
  function put(x,y,z,color){
-  if(points.length>=62000*3||used>=quota||Math.abs(x)>bounds[0]||Math.abs(z)>bounds[1])return;
+  if(points.length>=particleBudget*3||used>=quota||Math.abs(x)>bounds[0]||Math.abs(z)>bounds[1])return;
   const fade=Math.max(.05,1-Math.max(Math.abs(x)/bounds[0],Math.abs(z)/bounds[1])**8);
   points.push(x*scale,y*scale,-z*scale);colors.push(...color);fades.push(fade);used++;
  }
@@ -49,7 +50,7 @@ export function buildCityPositions(data,path,view="start",focus=null,options={})
   return {building,ring,distance,xmin:Math.min(...x),xmax:Math.max(...x),zmin:Math.min(...z),zmax:Math.max(...z)};
  }).filter(b=>b.xmin<bounds[0]&&b.xmax>-bounds[0]&&b.zmin<bounds[1]&&b.zmax>-bounds[1]).sort((a,b)=>a.distance-b.distance);
  if(!overview){
-  quota=Math.max(12,Math.floor(62000/Math.max(1,buildings.length)));
+  quota=Math.max(12,Math.floor(particleBudget/Math.max(1,buildings.length)));
   for(const item of buildings){
    used=0;
    const {building,ring}=item,holes=(building.holes||[]).map(h=>h.map(meters));
@@ -63,9 +64,9 @@ export function buildCityPositions(data,path,view="start",focus=null,options={})
     const clipped=clipSegment(a,b,bounds);if(!clipped)continue;
     const length=Math.hypot(b[0]-a[0],b[1]-a[1]),count=Math.max(1,Math.min(20,Math.ceil(length/6)));
     const shade=.45+.35*Math.abs((b[0]-a[0])/(length||1));
-    for(let j=0;j<=count;j++){
+    for(let j=0;j<=count&&used<quota;j++){
      const t=j/count,x=a[0]+(b[0]-a[0])*t,z=a[1]+(b[1]-a[1])*t;
-     for(let y=bottom;y<h;y+=Math.max(8,(h-bottom)/10))put(x,y,z,[.22*shade,.40*shade,.52*shade]);
+     for(let y=bottom;y<h&&used<quota;y+=Math.max(8,(h-bottom)/10))put(x,y,z,[.22*shade,.40*shade,.52*shade]);
     }
     if(Math.abs(a[0])<bounds[0]&&Math.abs(a[1])<bounds[1]&&edges.length<360000)
      edges.push(a[0]*scale,bottom*scale,-a[1]*scale,a[0]*scale,h*scale,-a[1]*scale);
@@ -73,7 +74,7 @@ export function buildCityPositions(data,path,view="start",focus=null,options={})
    const xmin=Math.max(-bounds[0],item.xmin),xmax=Math.min(bounds[0],item.xmax);
    const zmin=Math.max(-bounds[1],item.zmin),zmax=Math.min(bounds[1],item.zmax);
    const step=Math.max(5,Math.sqrt(Math.max(1,(xmax-xmin)*(zmax-zmin))/20));
-   for(let x=xmin;x<xmax;x+=step)for(let z=zmin;z<zmax;z+=step)
+   for(let x=xmin;x<xmax&&used<quota;x+=step)for(let z=zmin;z<zmax&&used<quota;z+=step)
     if(inside([x,z],ring)&&!holes.some(hole=>inside([x,z],hole)))put(x,h,z,[.30,.47,.57]);
   }
  }
@@ -177,20 +178,55 @@ export function createParticleCity(THREE,scene,camera=null){
  clipToCity(pathM);
  const footpaths=new THREE.LineSegments(pathG,pathM);group.add(footpaths);
  const labelGroup=new THREE.Group();group.add(labelGroup);
- let revision=-1,built=null;
+ let revision=-1,built=null,lastBudget=0;
  function attributes(g,positions,colors,fades){
-  g.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));
-  g.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
-  g.setAttribute("aFade",new THREE.Float32BufferAttribute(fades,1));g.computeBoundingSphere();
+  const count=positions.length/3;
+  if(!g.getAttribute("position")||g.getAttribute("position").count<count){
+   g.dispose();for(const name of Object.keys(g.attributes))g.deleteAttribute(name);
+   const capacity=2**Math.ceil(Math.log2(Math.max(1,count)));
+   g.setAttribute("position",new THREE.BufferAttribute(new Float32Array(capacity*3),3).setUsage(THREE.DynamicDrawUsage));
+   g.setAttribute("color",new THREE.BufferAttribute(new Float32Array(capacity*3),3).setUsage(THREE.DynamicDrawUsage));
+   g.setAttribute("aFade",new THREE.BufferAttribute(new Float32Array(capacity),1).setUsage(THREE.DynamicDrawUsage));
+  }
+  for(const [name,data] of [["position",positions],["color",colors],["aFade",fades]]){
+   const attr=g.getAttribute(name);attr.array.fill(0);attr.array.set(data);attr.needsUpdate=true;
+  }
+  g.setDrawRange(0,count);g.computeBoundingSphere();
  }
- function lines(g,array){g.setAttribute("position",new THREE.Float32BufferAttribute(array,3));g.computeBoundingSphere();}
+ function lines(g,array){
+  const count=array.length/3;
+  if(!g.getAttribute("position")||g.getAttribute("position").count<count){
+   g.dispose();for(const name of Object.keys(g.attributes))g.deleteAttribute(name);
+   const capacity=2**Math.ceil(Math.log2(Math.max(1,count)));
+   g.setAttribute("position",new THREE.BufferAttribute(new Float32Array(capacity*3),3).setUsage(THREE.DynamicDrawUsage));
+  }
+  const attr=g.getAttribute("position");attr.array.fill(0);attr.array.set(array);attr.needsUpdate=true;
+  g.setDrawRange(0,count);g.computeBoundingSphere();
+ }
+ function dashedDistances(g){
+  const position=g.getAttribute("position");
+  let attr=g.getAttribute("lineDistance");
+  if(!attr||attr.count!==position.count){
+   attr=new THREE.BufferAttribute(new Float32Array(position.count),1).setUsage(THREE.DynamicDrawUsage);
+   g.setAttribute("lineDistance",attr);
+  }
+  let total=0;attr.array.fill(0);
+  for(let i=0;i<g.drawRange.count;i+=2){
+   attr.array[i]=total;
+   total+=Math.hypot(position.getX(i+1)-position.getX(i),position.getY(i+1)-position.getY(i),position.getZ(i+1)-position.getZ(i));
+   attr.array[i+1]=total;
+  }
+  attr.needsUpdate=true;
+ }
  return {update(state,mix,time,metrics){
   const data=state.cityScene;
-  if(data&&state.cityRevision!==revision){
-   revision=state.cityRevision;built=buildCityPositions(data.context||{},data.path||[],data.view||"start",data.focus||null,{extent:data.extent,heightScale:DEFAULT_HEIGHT_SCALE});
+  const budget=state.cityParticleBudget||36000;
+  if(data&&(state.cityRevision!==revision||budget!==lastBudget)){
+   lastBudget=budget;
+   revision=state.cityRevision;built=buildCityPositions(data.context||{},data.path||[],data.view||"start",data.focus||null,{extent:data.extent,heightScale:DEFAULT_HEIGHT_SCALE,particleBudget:budget});
    attributes(geometry,built.points,built.colors,built.fades);
    lines(edgeG,built.edges);lines(streetsG,built.streets||[]);lines(arterialG,built.arterials||[]);
-   lines(pathG,built.paths||[]);footpaths.computeLineDistances();
+   lines(pathG,built.paths||[]);dashedDistances(pathG);
    for(const label of [...labelGroup.children]){
     label.material.map?.dispose();label.material.dispose();labelGroup.remove(label);
    }
@@ -209,9 +245,7 @@ export function createParticleCity(THREE,scene,camera=null){
     clipToCity(m);
     const sprite=new THREE.Sprite(m);sprite.position.fromArray(item.position);sprite.scale.set(item.endpoint?1.25:.90,item.endpoint ? .22 : .17,1);sprite.userData.endpoint=!!item.endpoint;sprite.renderOrder=9;labelGroup.add(sprite);
    }
-   const routeSegments=[];
-   for(const part of built.routeParts)for(let i=1;i<part.length;i++)routeSegments.push(...part[i-1],...part[i]);
-   lines(routeLineG,built.fullLine||routeSegments);
+   lines(routeLineG,built.fullLine||[]);
    const markers=[];
    for(const p of [data.path?.[0],data.path?.at(-1)]){
     if(!p)continue;

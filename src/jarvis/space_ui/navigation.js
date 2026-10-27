@@ -124,7 +124,7 @@ export class NavigationController{
   this.stage=document.getElementById("mapStage");
   this.controls=document.getElementById("travelOptions");
   this.panel=document.getElementById("travelPanel");
-  this.resolved=null;this.pendingPlaceReject=null;this.sceneRequestId=0;this.viewTimer=null;
+  this.resolved=null;this.pendingPlaceReject=null;this.sceneRequestId=0;this.viewTimer=null;this.contextLoading=false;this.pendingContext=null;
   for(const button of document.querySelectorAll("[data-city-view]"))button.onclick=()=>this.setView(button.dataset.cityView);
   const height=document.getElementById("cityHeight");
   if(height)height.oninput=()=>{
@@ -358,7 +358,8 @@ export class NavigationController{
    const contextPath=view==="overview"?path.filter((_,i)=>i%Math.max(1,Math.ceil(path.length/1500))===0):
      [[focus[0]-extent*.8/(111320*Math.cos(focus[1]*Math.PI/180)),focus[1]-extent*.65/111320],
       [focus[0]+extent*.8/(111320*Math.cos(focus[1]*Math.PI/180)),focus[1]+extent*.65/111320]];
-   const data=await this.api("city/context",{path:contextPath,overview:view==="overview"||extent>6000});
+   const data=await this.requestCityContext({path:contextPath,overview:view==="overview"||extent>6000},sceneId);
+   if(!data)return;
    if(version!==this.requestVersion||!this.isOpen||path!==this.path||view!==this.state.cityView||sceneId!==this.sceneRequestId)return;
    this.currentContext=data;
    this.state.cityScene={path,context:data,view,focus,extent,originName:this.resolved?.origin.name,destinationName:this.resolved?.destination.name};
@@ -388,8 +389,27 @@ export class NavigationController{
   document.getElementById("cityViewLabel").textContent=view==="overview"?"全程路线 · 含起点与终点":view==="end"?"终点街区 · 三维城市":"起点街区 · 三维城市";
   if(this.isOpen&&this.path.length)this.showScene(this.path,{},this.requestVersion);
  }
+ requestCityContext(body,sceneId){
+  return new Promise((resolve,reject)=>{
+   if(this.pendingContext)this.pendingContext.resolve(null);
+   this.pendingContext={body,sceneId,resolve,reject};
+   void this.drainCityContext();
+  });
+ }
+ async drainCityContext(){
+  if(this.contextLoading)return;
+  this.contextLoading=true;
+  try{
+   while(this.pendingContext){
+    const task=this.pendingContext;this.pendingContext=null;
+    if(!this.isOpen||task.sceneId!==this.sceneRequestId){task.resolve(null);continue;}
+    try{task.resolve(await this.api("city/context",task.body));}
+    catch(error){task.reject(error);}
+   }
+  }finally{this.contextLoading=false;}
+ }
  scheduleViewCommit(){
-  clearTimeout(this.viewTimer);this.viewTimer=setTimeout(()=>this.commitView(),220);
+  clearTimeout(this.viewTimer);this.viewTimer=setTimeout(()=>this.commitView(),350);
  }
  commitView(){
   clearTimeout(this.viewTimer);
@@ -405,6 +425,7 @@ export class NavigationController{
  close(){
   if(this.pendingPlaceReject){this.pendingPlaceReject(new Error("已退出导航"));this.pendingPlaceReject=null;}
   clearTimeout(this.viewTimer);this.sceneRequestId++;
+  if(this.pendingContext){this.pendingContext.resolve(null);this.pendingContext=null;}
   this.isOpen=false;this.state.mapOpen=false;this.state.mapReady=false;
   this.state.mapStage="closed";this.state.mapStatus="";
   this.state.mapSummary="";this.state.mapTrip="";this.options=[];this.controls.replaceChildren();
