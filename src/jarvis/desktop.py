@@ -336,6 +336,7 @@ class DesktopServer:
                        "/visual.js":("visual.js","text/javascript; charset=utf-8"),
                        "/navigation.js":("navigation.js","text/javascript; charset=utf-8"),
                        "/city.js":("city.js","text/javascript; charset=utf-8"),
+                       "/map_controls.js":("map_controls.js","text/javascript; charset=utf-8"),
                        "/places.js":("places.js","text/javascript; charset=utf-8")}
                 if path.startswith("/vendor/"):
                     vendor=(UI/path.lstrip("/")).resolve()

@@ -1,4 +1,5 @@
-/* Street-scale 3D particle architecture; routes use screen-sized grains, never additive glow bands. */
+import {DEFAULT_EXTENT,DEFAULT_HEIGHT_SCALE} from "./map_controls.js";
+/* Accurate source coordinates, polygon courtyards and independently exaggerated architecture. */
 export function inside(point,ring){
  let yes=false;
  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
@@ -11,90 +12,102 @@ export function clipSegment(a,b,bounds){
  let low=0,high=1;
  for(let i=0;i<4;i++){
   if(Math.abs(p[i])<1e-12){if(q[i]<0)return null;continue;}
-  const r=q[i]/p[i];
-  if(p[i]<0)low=Math.max(low,r);else high=Math.min(high,r);
+  const t=q[i]/p[i];if(p[i]<0)low=Math.max(low,t);else high=Math.min(high,t);
   if(low>high)return null;
  }
  return [[a[0]+low*dx,a[1]+low*dy],[a[0]+high*dx,a[1]+high*dy]];
 }
-export function buildCityPositions(data,path,view="start",focus=null){
+export function buildCityPositions(data,path,view="start",focus=null,options={}){
  const basis=path.length?path:(data.roads?.[0]?.path||data.buildings?.[0]?.footprint||[]);
- if(!basis.length)return {points:[],colors:[],fades:[],edges:[],route:[],routeParts:[],origin:[0,0],scale:1};
- const overview=view==="overview";
+ const empty={points:[],colors:[],fades:[],edges:[],streets:[],arterials:[],paths:[],route:[],routeParts:[],labels:[],origin:[0,0],scale:1,renderedBuildings:0};
+ if(!basis.length)return empty;
+ const overview=view==="overview",localExtent=Math.max(600,Math.min(5000,Number(options.extent)||DEFAULT_EXTENT));
  const origin=overview?[(Math.min(...basis.map(p=>p[0]))+Math.max(...basis.map(p=>p[0])))/2,
   (Math.min(...basis.map(p=>p[1]))+Math.max(...basis.map(p=>p[1])))/2]:(focus||(view==="end"?basis.at(-1):basis[0]));
  const cos=Math.cos(origin[1]*Math.PI/180),meters=p=>[(p[0]-origin[0])*111320*cos,(p[1]-origin[1])*111320];
  const routeM=basis.map(meters);
- const extent=overview?Math.max(2600,...routeM.map(p=>Math.abs(p[0])*2),...routeM.map(p=>Math.abs(p[1])*2)):2600;
- const scale=3.9/extent,bounds=[2.4/scale,1.6/scale];
- const points=[],colors=[],fades=[],edges=[],streets=[],route=[],routeParts=[];
+ const extent=overview?Math.max(localExtent,...routeM.map(p=>Math.abs(p[0])*2),...routeM.map(p=>Math.abs(p[1])*2)):localExtent;
+ const scale=3.9/extent,bounds=[2.4/scale,1.6/scale],heightScale=Math.max(1,Math.min(32,Number(options.heightScale)||DEFAULT_HEIGHT_SCALE));
+ const points=[],colors=[],fades=[],edges=[],streets=[],arterials=[],paths=[],route=[],routeParts=[],labels=[];
+ let quota=62000,used=0,visualMaxHeight=0;
  function put(x,y,z,color){
-  if(points.length>=135000||Math.abs(x)>bounds[0]||Math.abs(z)>bounds[1])return;
-  const fade=Math.max(.05,1-Math.max(Math.abs(x)/bounds[0],Math.abs(z)/bounds[1])**6);
-  points.push(x*scale,y*scale,-z*scale);colors.push(...color);fades.push(fade);
+  if(points.length>=62000*3||used>=quota||Math.abs(x)>bounds[0]||Math.abs(z)>bounds[1])return;
+  const fade=Math.max(.05,1-Math.max(Math.abs(x)/bounds[0],Math.abs(z)/bounds[1])**8);
+  points.push(x*scale,y*scale,-z*scale);colors.push(...color);fades.push(fade);used++;
  }
  function edge(a,b,height){
-  const clipped=clipSegment(a,b,bounds);if(!clipped||edges.length>180000)return;
+  const clipped=clipSegment(a,b,bounds);if(!clipped||edges.length>=360000)return;
   for(const p of clipped)edges.push(p[0]*scale,height*scale,-p[1]*scale);
  }
- function grains(a,b,height,color,spacing=10){
+ function grains(a,b,height,color,spacing=4){
   const clipped=clipSegment(a,b,bounds);if(!clipped)return;
-  [a,b]=clipped;
-  const length=Math.hypot(b[0]-a[0],b[1]-a[1]),count=Math.min(400,Math.max(1,Math.ceil(length/spacing)));
+  [a,b]=clipped;const count=Math.min(240,Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/spacing)));
   for(let i=0;i<count;i++){const t=i/count;put(a[0]+(b[0]-a[0])*t,height,a[1]+(b[1]-a[1])*t,color);}
  }
+ const buildings=(data.buildings||[]).map(building=>{
+  const ring=building.footprint.map(meters),x=ring.map(p=>p[0]),z=ring.map(p=>p[1]);
+  const distance=ring.reduce((s,p)=>s+Math.hypot(...p),0)/ring.length;
+  return {building,ring,distance,xmin:Math.min(...x),xmax:Math.max(...x),zmin:Math.min(...z),zmax:Math.max(...z)};
+ }).filter(b=>b.xmin<bounds[0]&&b.xmax>-bounds[0]&&b.zmin<bounds[1]&&b.zmax>-bounds[1]).sort((a,b)=>a.distance-b.distance);
  if(!overview){
-  const buildings=[...(data.buildings||[])].sort((a,b)=>{
-   const center=r=>{const ring=r.footprint;return ring.reduce((s,p)=>s+Math.hypot(...meters(p)),0)/ring.length;};
-   return center(a)-center(b);
-  });
-  for(const building of buildings){
-   const ring=building.footprint.map(meters),holes=(building.holes||[]).map(h=>h.map(meters));
-   const h=Math.min(180,Math.max(6,building.height||12))*8;
-   for(let i=1;i<ring.length;i++){
-    const a=ring[i-1],b=ring[i];
-    edge(a,b,h);grains(a,b,h,[.58,.71,.74],9);
-    // Keep facades open: architectural corners/roofs remain readable at neighborhood scale.
+  quota=Math.max(12,Math.floor(62000/Math.max(1,buildings.length)));
+  for(const item of buildings){
+   used=0;
+   const {building,ring}=item,holes=(building.holes||[]).map(h=>h.map(meters));
+   const realHeight=Math.min(500,Math.max(3,Number(building.height)||12));
+   // Keep very tall source towers on screen without modifying the source height.
+   const h=Math.min(realHeight*heightScale,1.7/scale),bottom=Math.max(0,Number(building.min_height)||0)/realHeight*h;
+   visualMaxHeight=Math.max(visualMaxHeight,h*scale);
+   for(const wall of [ring,...holes])for(let i=1;i<wall.length;i++){
+    const a=wall[i-1],b=wall[i];
+    edge(a,b,h);edge(a,b,bottom);grains(a,b,h,[.55,.73,.80]);
     const clipped=clipSegment(a,b,bounds);if(!clipped)continue;
-    const length=Math.hypot(b[0]-a[0],b[1]-a[1]),count=Math.max(1,Math.min(32,Math.ceil(length/10)));
-    const shade=.5+.35*Math.abs((b[0]-a[0])/(length||1));
+    const length=Math.hypot(b[0]-a[0],b[1]-a[1]),count=Math.max(1,Math.min(20,Math.ceil(length/6)));
+    const shade=.45+.35*Math.abs((b[0]-a[0])/(length||1));
     for(let j=0;j<=count;j++){
      const t=j/count,x=a[0]+(b[0]-a[0])*t,z=a[1]+(b[1]-a[1])*t;
-     for(let y=0;y<h;y+=18)put(x,y,z,[.22*shade,.38*shade,.43*shade]);
+     for(let y=bottom;y<h;y+=Math.max(8,(h-bottom)/10))put(x,y,z,[.22*shade,.40*shade,.52*shade]);
     }
-    if(Math.abs(a[0])<bounds[0]&&Math.abs(a[1])<bounds[1]){
-     edges.push(a[0]*scale,0,-a[1]*scale,a[0]*scale,h*scale,-a[1]*scale);
-    }
+    if(Math.abs(a[0])<bounds[0]&&Math.abs(a[1])<bounds[1]&&edges.length<360000)
+     edges.push(a[0]*scale,bottom*scale,-a[1]*scale,a[0]*scale,h*scale,-a[1]*scale);
    }
-   const xmin=Math.max(-bounds[0],Math.min(...ring.map(p=>p[0]))),xmax=Math.min(bounds[0],Math.max(...ring.map(p=>p[0])));
-   const zmin=Math.max(-bounds[1],Math.min(...ring.map(p=>p[1]))),zmax=Math.min(bounds[1],Math.max(...ring.map(p=>p[1])));
-   const step=Math.max(9,Math.sqrt(Math.max(1,(xmax-xmin)*(zmax-zmin))/12));
-   for(let x=xmin;x<xmax;x+=step)for(let z=zmin;z<zmax;z+=step){
-    if(inside([x,z],ring)&&!holes.some(hole=>inside([x,z],hole)))put(x,h,z,[.32,.46,.50]);
-   }
+   const xmin=Math.max(-bounds[0],item.xmin),xmax=Math.min(bounds[0],item.xmax);
+   const zmin=Math.max(-bounds[1],item.zmin),zmax=Math.min(bounds[1],item.zmax);
+   const step=Math.max(5,Math.sqrt(Math.max(1,(xmax-xmin)*(zmax-zmin))/20));
+   for(let x=xmin;x<xmax;x+=step)for(let z=zmin;z<zmax;z+=step)
+    if(inside([x,z],ring)&&!holes.some(hole=>inside([x,z],hole)))put(x,h,z,[.30,.47,.57]);
   }
   for(const road of data.roads||[]){
-   const path=road.path.map(meters);
+   if(["ferry","aerialway"].includes(road.kind))continue;
+   const path=road.path.map(meters),major=/^(motorway|trunk|primary|secondary|tertiary)$/.test(road.kind);
+   const pedestrian=/path|footway|pedestrian|cycleway|steps|track/.test(road.kind+" "+(road.subclass||""));
+   const target=major?arterials:pedestrian?paths:streets;
    for(let i=1;i<path.length;i++){
-    const clipped=clipSegment(path[i-1],path[i],bounds);
-    if(clipped)for(const p of clipped)streets.push(p[0]*scale,.001,-p[1]*scale);
+    const clipped=clipSegment(path[i-1],path[i],bounds);if(!clipped)continue;
+    for(const p of clipped)target.push(p[0]*scale,.002,-p[1]*scale);
    }
   }
+  for(const label of data.labels||[]){
+   const [x,z]=meters(label.location);
+   if(Math.abs(x*scale)>2.15||Math.abs(z*scale)>1.3||labels.some(p=>p.name===label.name||Math.hypot(p.position[0]-x*scale,p.position[2]+z*scale)<.42))continue;
+   labels.push({name:label.name,position:[x*scale,.035,-z*scale]});if(labels.length>=8)break;
+  }
  }
- // Uniform metric spacing and clipped segments prevent thousands of coincident luminous dots.
- const spacing=overview?Math.max(12,extent/650):6;
+ // Interpolation adds visual grains without changing the provider's actual polyline vertices.
+ const spacing=overview?Math.max(12,extent/1000):2;
  for(let i=1;i<routeM.length;i++){
   const clipped=clipSegment(routeM[i-1],routeM[i],bounds);if(!clipped)continue;
   const [a,b]=clipped,length=Math.hypot(b[0]-a[0],b[1]-a[1]);
-  const count=Math.min(800,Math.max(1,Math.ceil(length/spacing))),part=[];
+  const count=Math.min(1200,Math.max(1,Math.ceil(length/spacing))),part=[];
   for(let j=0;j<=count;j++){
-   const t=j/count,p=[(a[0]+(b[0]-a[0])*t)*scale,5*scale,-(a[1]+(b[1]-a[1])*t)*scale];
-   const last=route.at(-1);if(!last||Math.hypot(...p.map((v,k)=>v-last[k]))>.002)route.push(p);
+   const t=j/count,p=[(a[0]+(b[0]-a[0])*t)*scale,3*scale,-(a[1]+(b[1]-a[1])*t)*scale];
+   const last=route.at(-1);if(!last||Math.hypot(...p.map((v,k)=>v-last[k]))>.001)route.push(p);
    part.push(p);
   }
   if(part.length>1)routeParts.push(part);
  }
- return {points,colors,fades,edges,streets,route,routeParts,origin,scale,extent,bounds};
+ return {points,colors,fades,edges,streets,arterials,paths,labels,route,routeParts,origin,scale,extent,bounds,
+  renderedBuildings:overview?0:buildings.length,visualMaxHeight,heightScale};
 }
 export function createParticleCity(THREE,scene){
  const group=new THREE.Group();scene.add(group);group.visible=false;
@@ -136,7 +149,7 @@ export function createParticleCity(THREE,scene){
  const lineMaterial=(color)=>new THREE.LineBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,blending:THREE.NormalBlending,toneMapped:false});
  const edgeG=new THREE.BufferGeometry(),edgeM=lineMaterial(0x88b1ba);
  const wire=new THREE.LineSegments(edgeG,edgeM);wire.renderOrder=1;group.add(wire);city.renderOrder=2;
- const streetsG=new THREE.BufferGeometry(),streetsM=lineMaterial(0x9bc5c9),streets=new THREE.LineSegments(streetsG,streetsM);group.add(streets);
+ const streetsG=new THREE.BufferGeometry(),streetsM=lineMaterial(0x7599b0),streets=new THREE.LineSegments(streetsG,streetsM);group.add(streets);
  const routeG=new THREE.BufferGeometry(),routeM=pointsMaterial(1.8),routePoints=new THREE.Points(routeG,routeM);
  routePoints.renderOrder=6;routeM.depthTest=false;group.add(routePoints);
  const routeLineG=new THREE.BufferGeometry(),routeLineM=lineMaterial(0x16fa7a),routeLine=new THREE.LineSegments(routeLineG,routeLineM);routeLine.renderOrder=6;routeLineM.depthTest=false;group.add(routeLine);
@@ -146,6 +159,11 @@ export function createParticleCity(THREE,scene){
  sparksG.setAttribute("aFade",new THREE.BufferAttribute(sparkFades,1));
  const sparksM=pointsMaterial(2.6),sparks=new THREE.Points(sparksG,sparksM);sparks.renderOrder=7;sparksM.depthTest=false;group.add(sparks);
  const pinsG=new THREE.BufferGeometry(),pinsM=lineMaterial(0x66f5bb),pins=new THREE.LineSegments(pinsG,pinsM);pins.renderOrder=8;pinsM.depthTest=false;group.add(pins);
+ const architecture=new THREE.Group();group.add(architecture);architecture.add(city,wire);
+ const arterialG=new THREE.BufferGeometry(),arterialM=lineMaterial(0xa1d4df),arterial=new THREE.LineSegments(arterialG,arterialM);group.add(arterial);
+ const pathG=new THREE.BufferGeometry(),pathM=new THREE.LineDashedMaterial({color:0x5b8795,dashSize:.012,gapSize:.012,transparent:true,opacity:0,depthWrite:false,toneMapped:false});
+ const footpaths=new THREE.LineSegments(pathG,pathM);group.add(footpaths);
+ const labelGroup=new THREE.Group();group.add(labelGroup);
  let revision=-1,built=null;
  function attributes(g,positions,colors,fades){
   g.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));
@@ -156,9 +174,22 @@ export function createParticleCity(THREE,scene){
  return {update(state,mix,time,metrics){
   const data=state.cityScene;
   if(data&&state.cityRevision!==revision){
-   revision=state.cityRevision;built=buildCityPositions(data.context||{},data.path||[],data.view||"start",data.focus||null);
+   revision=state.cityRevision;built=buildCityPositions(data.context||{},data.path||[],data.view||"start",data.focus||null,{extent:data.extent,heightScale:DEFAULT_HEIGHT_SCALE});
    attributes(geometry,built.points,built.colors,built.fades);
-   lines(edgeG,built.edges);lines(streetsG,built.streets||[]);
+   lines(edgeG,built.edges);lines(streetsG,built.streets||[]);lines(arterialG,built.arterials||[]);
+   lines(pathG,built.paths||[]);footpaths.computeLineDistances();
+   for(const label of [...labelGroup.children]){
+    label.material.map?.dispose();label.material.dispose();labelGroup.remove(label);
+   }
+   for(const item of built.labels){
+    const canvas=document.createElement("canvas");canvas.width=256;canvas.height=48;
+    const ctx=canvas.getContext("2d");ctx.font="24px Microsoft YaHei, sans-serif";ctx.textAlign="center";
+    ctx.strokeStyle="#02090e";ctx.lineWidth=5;ctx.strokeText(item.name,128,31);
+    ctx.fillStyle="#a9cad5";ctx.fillText(item.name,128,31);
+    const texture=new THREE.CanvasTexture(canvas);
+    const m=new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false,depthWrite:false,toneMapped:false,opacity:0});
+    const sprite=new THREE.Sprite(m);sprite.position.fromArray(item.position);sprite.scale.set(.90,.17,1);sprite.renderOrder=9;labelGroup.add(sprite);
+   }
    const routeSegments=[];
    for(const part of built.routeParts)for(let i=1;i<part.length;i++)routeSegments.push(...part[i-1],...part[i]);
    lines(routeLineG,routeSegments);
@@ -176,19 +207,27 @@ export function createParticleCity(THREE,scene){
    }
    lines(pinsG,markers);
    attributes(routeG,built.route.flat(),built.route.flatMap(()=>[.06,.95,.30]),built.route.map(()=>1));
-   metrics.cityBuildings=data.view==="overview"?0:data.context?.buildings?.length||0;
+   metrics.cityBuildings=built.renderedBuildings;
    metrics.cityRoads=data.context?.roads?.length||0;metrics.citySource=data.context?.status||"loading";
    metrics.cityRoutePoints=built.route.length;metrics.cityExtentMeters=built.extent;metrics.cityView=data.view||"start";
    metrics.cityParticles=built.points.length/3+built.route.length+36;
-   metrics.cityRoadSegments=(built.streets||[]).length/6;
+   metrics.cityRoadSegments=((built.streets||[]).length+(built.arterials||[]).length+(built.paths||[]).length)/6;
+   metrics.cityCourtyards=(data.context?.buildings||[]).reduce((s,b)=>s+(b.holes?.length||0),0);
+   metrics.cityTileZoom=data.context?.tile_zoom||null;metrics.cityLabels=built.labels.length;
   }
   group.visible=!!built&&mix>.001;if(!group.visible)return;
-  group.rotation.set(.50,-.25+(state.cityYaw||0),0);
-  group.scale.setScalar(.88*(state.cityZoom||1));group.position.y=-.16;
+  group.rotation.set(state.cityPitch||.62,-.25+(state.cityYaw||0),0);
+  const heightScale=Math.max(1,Math.min(32,Number(state.cityHeightScale)||DEFAULT_HEIGHT_SCALE));
+  architecture.scale.y=heightScale/DEFAULT_HEIGHT_SCALE;
+  metrics.cityHeightScale=heightScale;metrics.cityVisualMaxHeight=built.visualMaxHeight*architecture.scale.y;
+  metrics.cityYawTurns=(state.cityYaw||0)/(Math.PI*2);metrics.cityPitch=state.cityPitch||.62;
+  metrics.cityZoom=state.cityZoom||1;metrics.cityPan=[state.cityPanX||0,state.cityPanY||0];
+  group.scale.setScalar(.88*(state.cityZoom||1));group.position.set(state.cityPanX||0,-.24+(state.cityPanY||0),0);
   const arrival=THREE.MathUtils.smoothstep(mix,.63,1);
   const enter=THREE.MathUtils.smoothstep(mix,0,.18);
   material.uniforms.uOpacity.value=enter*.72;routeM.uniforms.uOpacity.value=enter*.95;
-  edgeM.opacity=arrival*.64;streetsM.opacity=arrival*.63;routeLineM.opacity=arrival*.90;pinsM.opacity=arrival*.95;
+  edgeM.opacity=arrival*.58;streetsM.opacity=arrival*.46;arterialM.opacity=arrival*.72;pathM.opacity=arrival*.32;
+  for(const label of labelGroup.children)label.material.opacity=arrival*.70;routeLineM.opacity=arrival*.90;pinsM.opacity=arrival*.95;
   sparksM.uniforms.uOpacity.value=arrival*.86;
   const dpr=metrics.pixelRatio||1;
   for(const m of [material,routeM,sparksM]){m.uniforms.uMorph.value=mix;m.uniforms.uTime.value=time;}

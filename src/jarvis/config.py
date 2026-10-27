@@ -53,6 +53,8 @@ class Settings:
     AMAP_SECURITY_JSCODE: str = ""
     AMAP_CITY: str = "苏州"
     AMAP_DEFAULT_ORIGIN: str = ""
+    MAP_VIEW_METERS: str = "1600"
+    MAP_HEIGHT_SCALE: str = "16"
 
     def asr_connection(self):
         # An explicit speech provider must have its own credential.
@@ -65,6 +67,10 @@ class Settings:
         return api_base(self.API_BASE_URL),self.ASR_API_KEY.strip() or self.API_KEY.strip()
 
     def validated(self):
+        for key,low,high in (("MAP_VIEW_METERS",600,5000),("MAP_HEIGHT_SCALE",1,32)):
+            try:value=float(getattr(self,key))
+            except (TypeError,ValueError):raise ValueError(key+" 必须为数字。") from None
+            if not low<=value<=high:raise ValueError(key+" 超出支持范围。")
         if self.WEATHER_ADCODE and not (self.WEATHER_ADCODE.isdigit() and len(self.WEATHER_ADCODE)==6):
             raise ValueError("天气行政区编码应为 6 位数字。")
         if len(self.AMAP_DEFAULT_ORIGIN)>120:

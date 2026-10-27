@@ -102,7 +102,7 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 
     .\.venv\Scripts\python.exe -B main.py --self-check --audio --tts
 
-麦克风测试会实际录音；播放调用成功不能代替人耳确认音质。常规浏览器自检使用模拟 SDK 和独立数据库，不使用真实地图凭证；真实服务联调需要使用者自行配置。发布前本机 105 项 Python 单元测试和实际 WebGL 正反向动画检查已通过。
+麦克风测试会实际录音；播放调用成功不能代替人耳确认音质。常规浏览器自检使用模拟 SDK 和独立数据库，不使用真实地图凭证；真实服务联调需要使用者自行配置。发布前本机 111 项 Python 单元测试和实际 WebGL 正反向动画检查已通过。
 
 ## 项目结构
 
@@ -119,3 +119,7 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 ## 许可
 
 项目沿用仓库现有的 [Apache License 2.0](LICENSE)。Three.js 使用 MIT，eviltransform 使用 BSD，原始许可随相应文件附带。地图数据及归属说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## feature/map-update
+
+本分支改善近景几何、建筑内院和底高，增加 ×1–×32 楼高强调与完整水平环绕、俯仰、平移、缩放及复位。详见 [地图更新说明](docs/map-update.md)。

@@ -58,10 +58,34 @@ def rings_of(data):
     if ring:rings.append(ring)
     return rings
 
+def signed_area(ring):
+    return sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(ring,ring[1:]))/2
+
+
+def polygon_groups(rings):
+    """MVT screen coordinates: clockwise exteriors have positive area, holes negative."""
+    polygons=[];current=None
+    for ring in rings:
+        if len(ring)<4:continue
+        area=signed_area(ring)
+        if area>0:
+            current={"outer":ring,"holes":[]};polygons.append(current)
+        elif area<0 and current is not None:
+            current["holes"].append(ring)
+    return polygons
+
+
+def finite_number(value,default):
+    try:
+        result=float(value)
+        return result if math.isfinite(result) else default
+    except (TypeError,ValueError):return default
+
+
 def decode_tile(data,x,y,z):
-    if data[:2]==b"\x1f\x8b":data=gzip.decompress(data)
+    if data[:2]==bytes((31,139)):data=gzip.decompress(data)
     if len(data)>8_000_000:raise ValueError("Tile too large")
-    buildings=[];roads=[]
+    buildings=[];roads=[];labels=[]
     for field,wire,layer in fields(data):
         if field!=3:continue
         name="";keys=[];values=[];features=[];extent=4096
@@ -71,7 +95,7 @@ def decode_tile(data,x,y,z):
             elif number==3:keys.append(value.decode())
             elif number==4:values.append(value_of(value))
             elif number==5:extent=value
-        if name not in ("building","transportation") or not 1<=extent<=65536:continue
+        if name not in ("building","transportation","transportation_name") or not 1<=extent<=65536:continue
         def position(point):
             lng=(x+point[0]/extent)/2**z*360-180
             lat=math.degrees(math.atan(math.sinh(math.pi*(1-2*(y+point[1]/extent)/2**z))))
@@ -87,11 +111,27 @@ def decode_tile(data,x,y,z):
                 elif number==3:kind=value
                 elif number==4:geometry=value
             if geometry is None:continue
-            for ring in rings_of(geometry):
-                points=[position(p) for p in ring]
-                if name=="building" and kind==3 and len(points)>=4:
-                    height=float(props.get("render_height") or props.get("height") or 12)
-                    buildings.append({"id":str(identifier),"footprint":points,"height":min(350,max(3,height)),"height_source":"provider_or_estimated"})
-                elif name=="transportation" and kind==2 and len(points)>1:
-                    roads.append({"id":str(identifier),"path":points,"kind":props.get("class","road"),"name":props.get("name","")})
-    return {"buildings":buildings,"roads":roads}
+            rings=rings_of(geometry)
+            if name=="building" and kind==3:
+                if props.get("hide_3d") in (True,1,"true"):continue
+                raw_height=props.get("render_height") or props.get("height")
+                height=min(500,max(3,finite_number(raw_height,12)))
+                bottom=min(height-1,max(0,finite_number(props.get("render_min_height"),0)))
+                for part,polygon in enumerate(polygon_groups(rings)):
+                    buildings.append({"id":str(identifier),"part":part,
+                        "footprint":[position(p) for p in polygon["outer"]],
+                        "holes":[[position(p) for p in h] for h in polygon["holes"]],
+                        "height":height,"min_height":bottom,
+                        "height_source":"provider_approximation" if raw_height is not None else "estimated"})
+            elif name in ("transportation","transportation_name") and kind==2:
+                for ring in rings:
+                    if len(ring)<2:continue
+                    points=[position(p) for p in ring]
+                    if name=="transportation":
+                        roads.append({"id":str(identifier),"path":points,"kind":props.get("class","road"),
+                            "subclass":props.get("subclass",""),"name":str(props.get("name",""))[:60],
+                            "bridge":props.get("brunnel")=="bridge","tunnel":props.get("brunnel")=="tunnel"})
+                    else:
+                        label=props.get("name:zh") or props.get("name") or props.get("name:latin")
+                        if label:labels.append({"name":str(label)[:60],"location":points[len(points)//2],"kind":props.get("class","road")})
+    return {"buildings":buildings,"roads":roads,"labels":labels}
