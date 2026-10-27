@@ -36,8 +36,11 @@ function updateHUD(){
  $("voiceTrigger").classList.toggle("recording",!!state.capturing);
  $("voiceDockLeft").textContent=state.capturing?"LISTENING":"PC MICROPHONE";
  const captions={idle:state.phase==="initial"?"等待您的下一句指令":"与你同在",listening:"正在聆听",thinking:"正在整理思绪",speaking:"正在回应您"};
- $("coreCaption").textContent=state.mapReady?(state.mapSummary||"高德地图 · 路线预览"):(captions[activity]||"等待指令");
- $("coreMode").textContent=state.mapReady?"PARTICLE CITY / 三维导航":state.phase==="initial"?"INITIAL / 待机形态":"DIALOGUE / 对话形态";
+ $("coreCaption").textContent=state.mapReady?(state.mapSummary||"高德地图 · 路线预览"):
+  state.mapOpen?(state.mapStatus||"正在准备导航…"):(captions[activity]||"等待指令");
+ $("coreMode").textContent=state.mapReady?"PARTICLE CITY / 三维导航":state.mapOpen?
+  (state.mapStage==="await_choice"?"WAITING / 请确认地点":state.mapStage==="error"?"NAVIGATION / 规划未完成":"NAVIGATION / 正在规划"):
+  state.phase==="initial"?"INITIAL / 待机形态":"DIALOGUE / 对话形态";
  $("audioLabel").textContent=state.capturing?"MIC INPUT":activity==="speaking"?"VOICE OUTPUT":"STANDBY";
  $("audioSource").textContent=state.capturing?"实际输入音量":activity==="speaking"?"实际输出音量":"麦克风未启用";
  $("volumeLabel").textContent=Math.round((state.level||0)*100)+"%";
@@ -107,12 +110,19 @@ updateWeather();
 $("voiceTrigger").onclick=()=>api("record",{}).catch(error=>message(error.message,true));
 $("microphoneModule").onclick=$("voiceTrigger").onclick;
 async function api(path,body){
- const response=await fetch("/api/"+path,{method:body===undefined?"GET":"POST",
-  headers:{"X-Jarvis-Token":TOKEN,...(body===undefined?{}:{"Content-Type":"application/json"})},
-  ...(body===undefined?{}:{body:JSON.stringify(body)})});
- const data=await response.json();
- if(!response.ok)throw new Error(data.error||"本机服务暂不可用");
- return data;
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),path==="city/context"?45000:15000);
+ try{
+  const response=await fetch("/api/"+path,{method:body===undefined?"GET":"POST",signal:controller.signal,
+   headers:{"X-Jarvis-Token":TOKEN,...(body===undefined?{}:{"Content-Type":"application/json"})},
+   ...(body===undefined?{}:{body:JSON.stringify(body)})});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"本机服务暂不可用");
+  return data;
+ }catch(error){
+  if(error.name==="AbortError")throw new Error(path==="city/context"?"城市数据加载超时":"本机请求超时，请重试");
+  throw error;
+ }finally{clearTimeout(timer);}
 }
 function message(text,error=false,seconds=7){
  $("subtitle").textContent=text;$("subtitle").classList.add("visible");
@@ -123,8 +133,13 @@ async function poll(){
  try{
   const data=await api("state");Object.assign(state,data);pollErrors=0;
   const labels={idle:state.phase==="initial"?"静候指令":"与你同在",listening:"正在聆听",thinking:"正在思考",speaking:"正在回应"};
-  $("phaseLabel").textContent=state.mapReady?(state.mapTrip||"三维粒子城市 · 出行规划"):(labels[state.activity]||"静候指令");
-  if(state.presenting||Date.now()>localSubtitleUntil){
+  $("phaseLabel").textContent=state.mapReady?(state.mapTrip||"三维粒子城市 · 出行规划"):
+   state.mapOpen?(state.mapStatus||"正在准备导航…"):(labels[state.activity]||"静候指令");
+  if(state.mapOpen&&!state.mapReady){
+   $("subtitle").textContent=state.mapStatus||"正在准备导航…";
+   $("subtitle").classList.toggle("visible",$("command").hidden);
+   $("subtitle").classList.toggle("error",state.mapStage==="error");
+  }else if(state.presenting||Date.now()>localSubtitleUntil){
    $("subtitle").textContent=state.subtitle.slice(0,460);
    $("subtitle").classList.toggle("visible",!!state.subtitle&&$("command").hidden);
   }

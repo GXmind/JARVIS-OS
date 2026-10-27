@@ -127,6 +127,11 @@ export class NavigationController{
   for(const button of document.querySelectorAll("[data-city-view]"))button.onclick=()=>this.setView(button.dataset.cityView);
  }
  status(text,error=false){this.state.mapStatus=text;this.message(text,error,error?14:5);}
+ progress(stage,text,error=false){
+  this.state.mapStage=stage;this.state.mapStatus=text;
+  document.getElementById("travelStatus").textContent=text;
+  this.message(text,error,error?14:5);
+ }
  async weather(){
   const config=await this.api("map/config");if(!config.configured)return null;
   const A=await loadAMap(config);
@@ -143,7 +148,7 @@ export class NavigationController{
  async open(command={}){
   this.isOpen=true;this.state.mapOpen=true;this.panel.hidden=false;
   document.body.classList.add("map-open");
-  document.getElementById("travelStatus").textContent="正在准备通行方案…";
+  this.progress("preparing","正在准备通行方案…");
   const version=++this.requestVersion;this.command=command;
   if(this.pendingPlaceReject){this.pendingPlaceReject(new Error("已切换请求"));this.pendingPlaceReject=null;}
   this.state.cityView="start";this.state.cityZoom=1;this.resolved=null;
@@ -161,16 +166,16 @@ export class NavigationController{
    document.getElementById("travelOrigin").textContent=command.origin||this.config.default_origin||"尚未填写";
    document.getElementById("travelDestination").textContent=command.destination||"等待目的地";
    if(command.action==="await_origin"){
-    document.getElementById("travelStatus").textContent="请先填写起点";
+    this.progress("await_origin","请先在 F2 填写常用起点，或说明从哪里出发");
     this.status("您从哪里出发？可在 F2 保存常用出发地，或说“从苏州站出发”。");return;
    }
-   if(!this.config.configured){this.status(this.config.message);return;}
-   this.status("正在读取高德真实出行数据…");
+   if(!this.config.configured){this.progress("await_config",this.config.message);return;}
+   this.progress("sdk","正在连接高德地点与路线服务…");
    this.AMap=await loadAMap(this.config);
    if(version!==this.requestVersion)return;
    if(command.origin&&command.destination)await this.plan(command,version);
    else{
-    this.status("正在构建所在城市的粒子模型…");
+    this.progress("locating","正在定位城市区域…");
     const address=this.config.default_origin||"苏州市虎丘区";
     const point=await new Promise((resolve,reject)=>{
      const timer=setTimeout(()=>reject(new Error("城市位置查询超时。")),15000);
@@ -182,10 +187,13 @@ export class NavigationController{
     if(version!==this.requestVersion)return;
     this.showScene([point],{},version);
    }
-  }catch(error){if(version===this.requestVersion){document.getElementById("travelStatus").textContent="未能完成规划，请核对地点";this.status(error.message,true);}}
+  }catch(error){if(version===this.requestVersion){
+   this.progress("error",error.message+"；可重新发送导航指令重试",true);
+  }}
  }
  async resolvePlace(query,role,version){
   const city=this.command.city||this.config.city||"苏州";
+  this.progress("locating","正在核实"+(role==="origin"?"起点":"终点")+"："+query);
   const rows=await new Promise((resolve,reject)=>{
    const timer=setTimeout(()=>reject(new Error("地点搜索超时："+query)),18000);
    new this.AMap.PlaceSearch({city,citylimit:true,pageSize:8,extensions:"all"}).search(query,(status,data)=>{
@@ -200,12 +208,16 @@ export class NavigationController{
   if(!selected){
    selected=await new Promise((resolve,reject)=>{
     this.pendingPlaceReject=reject;this.controls.replaceChildren();
-    document.getElementById("travelStatus").textContent="请确认"+(role==="origin"?"起点":"终点")+"的具体地点";
+    this.routeBusy=false;
+    this.progress("await_choice","发现同名地点，请在左侧选择"+(role==="origin"?"起点":"终点"));
     for(const candidate of candidates.slice(0,5)){
      const button=document.createElement("button");button.className="travel-choice";
      const name=document.createElement("strong"),address=document.createElement("small");
      name.textContent=candidate.name;address.textContent=candidate.city+" "+candidate.area+" "+candidate.address;
-     button.append(name,address);button.onclick=()=>{this.pendingPlaceReject=null;resolve(candidate);};
+     button.append(name,address);button.onclick=()=>{
+      this.pendingPlaceReject=null;this.routeBusy=true;
+      this.progress("locating","已确认地点，正在继续规划…");resolve(candidate);
+     };
      this.controls.append(button);
     }
    });
@@ -237,12 +249,12 @@ export class NavigationController{
   this.renderOptions();this.options=[];
   const city=command.city||this.config.city||"苏州";
   try{
-   document.getElementById("travelStatus").textContent="正在核实起点与终点…";
+   this.progress("locating","正在核实起点与终点…");
    const origin=await this.resolvePlace(command.origin,"origin",version);
    const destination=await this.resolvePlace(command.destination,"destination",version);
    this.resolved={origin,destination};
    const points=[origin.location,destination.location];
-   document.getElementById("travelStatus").textContent="地点已核实，正在比较通行方案…";
+   this.progress("routing","地点已核实，正在比较打车、自驾、公交和步行…");
    const requests=[
     this.query(this.AMap.Driving,{policy:0,extensions:"all"},points),
     this.query(this.AMap.Transfer,{city,cityd:city,policy:0},points),
@@ -320,6 +332,7 @@ export class NavigationController{
    this.state.mapReady=true;
   }
   this.stage.hidden=false;document.body.classList.add("map-active");
+  this.progress("city","路线已就绪，正在构建三维城市…");
   document.getElementById("cityDataNote").textContent="高德路线 · 正在加载真实周边楼宇";
   try{
    const contextPath=view==="overview"?path.filter((_,i)=>i%Math.max(1,Math.ceil(path.length/1500))===0):
@@ -329,6 +342,7 @@ export class NavigationController{
    this.currentContext=data;
    this.state.cityScene={path,context:data,view,focus};
    this.state.cityRevision=(this.state.cityRevision||0)+1;this.state.mapReady=true;
+   this.progress("ready","路线已就绪，点击左侧方式切换");
    const note=document.getElementById("cityDataNote");
    note.textContent=data.buildings?.length?"局部城市 · 楼高示意 · ":"楼宇数据暂不可用 · ";
    const credits=[["高德","https://www.amap.com/"],["OpenFreeMap","https://openfreemap.org/"],
@@ -341,6 +355,7 @@ export class NavigationController{
    if(version===this.requestVersion&&this.isOpen&&path===this.path&&view===this.state.cityView){
     this.state.cityScene={path,context:{},view,focus};
     this.state.cityRevision=(this.state.cityRevision||0)+1;this.state.mapReady=true;
+    this.progress("ready","路线已就绪，周边楼宇暂不可用");
     document.getElementById("cityDataNote").textContent="高德真实路线 · 周边城市数据暂不可用";
    }
   }
@@ -355,6 +370,7 @@ export class NavigationController{
  close(){
   if(this.pendingPlaceReject){this.pendingPlaceReject(new Error("已退出导航"));this.pendingPlaceReject=null;}
   this.isOpen=false;this.state.mapOpen=false;this.state.mapReady=false;
+  this.state.mapStage="closed";this.state.mapStatus="";
   this.state.mapSummary="";this.state.mapTrip="";this.options=[];this.controls.replaceChildren();
   ++this.requestVersion;this.routeBusy=false;
   document.body.classList.remove("map-open","map-active");this.stage.hidden=true;this.panel.hidden=true;

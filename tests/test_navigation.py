@@ -30,6 +30,15 @@ class NavigationTests(unittest.TestCase):
         result=parse_navigation("请导航从苏州站到拙政园。")
         self.assertEqual((result["origin"],result["destination"],result["mode"]),("苏州站","拙政园","compare"))
 
+    def test_administrator_garden_request_tail_is_not_a_poi(self):
+        for text in ("帮我导航到拙政园", "帮我导航到拙政园，给我路线",
+                     "帮我导航到拙政园，给我导航路线", "我要去拙政园，帮我规划一下路线",
+                     "导航到拙政园，给我规划一条路线"):
+            with self.subTest(text=text):
+                result=parse_navigation(text,"苏州","苏州站")
+                self.assertEqual(result["destination"],"拙政园")
+                self.assertEqual(result["origin"],"苏州站")
+
     def test_walking_intent(self):
         result=parse_navigation("步行导航从苏州站到拙政园")
         self.assertEqual(result["mode"],"walking")

@@ -19,11 +19,18 @@ export function rankPlaces(query,rows,city){
   const key=fold(q),name=fold(p.name),address=fold(p.address);
   let score=name===key?1000:name.startsWith(key)&&key.length>=2?620:name.includes(key)&&key.length>=2?540:0;
   if(address.includes(key)&&key.length>=5)score=Math.max(score,650);
+  // JS PlaceSearch returns localized type labels; REST fixtures may use numeric typecode.
+  const category=String(p.typecode||"")+";"+String(p.type||"");
+  const scenic=/风景名胜|(?:^|;)11\d{4}(?:;|$)/.test(category);
+  const generic=/地名地址信息|热点地名|(?:^|;)19\d{4}(?:;|$)/.test(category);
+  // A precise POI outranks its same-name neighborhood label, never a different-city candidate.
+  if(name===key&&scenic)score+=140;
+  if(generic)score-=120;
   if(/景区|风景|公园/.test(query)){
-   if(String(p.type).startsWith("11"))score+=70;
+   if(scenic)score+=70;
    if(/停车场|游客中心|检票|咖啡|驿站|出入口/.test(p.name))score-=170;
   }else if(/家园|小区|住宅/.test(query)){
-   if(String(p.type).startsWith("12"))score+=50;
+   if(/商务住宅|(?:^|;)12\d{4}(?:;|$)/.test(category))score+=50;
    if(/停车|公交站|快递|幼儿园|出入口/.test(p.name))score-=170;
   }
   return {id:String(p.id||""),name:String(p.name||query),address:String(p.address||""),

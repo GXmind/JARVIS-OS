@@ -275,6 +275,26 @@ def run(check_audio=False):
         assert cdp.evaluate("window.__navigation.selected")=="walking"
         assert cdp.evaluate("document.querySelector('[data-mode=walking]').getAttribute('aria-pressed')")== "true"
 
+        # Reproduce a real ambiguity while a backend caption is still being presented.
+        state.presenting=True
+        cdp.evaluate((ROOT/"tests/navigation_choice_fixture.js").read_text(encoding="utf-8"))
+        deadline=time.monotonic()+6
+        while not cdp.evaluate("window.__navigation.state.mapStage==='await_choice'"):
+            if time.monotonic()>deadline:raise RuntimeError("Ambiguous-place prompt missing")
+            time.sleep(.1)
+        time.sleep(.4)
+        assert cdp.evaluate("document.getElementById('coreCaption').textContent.includes('左侧选择终点')")
+        assert cdp.evaluate("document.getElementById('subtitle').textContent.includes('左侧选择终点')")
+        assert not cdp.evaluate("window.__navigation.routeBusy")
+        cdp.evaluate("document.getElementById('travelOptions').children[0].click()")
+        deadline=time.monotonic()+6
+        while not cdp.evaluate("window.__navigation.state.mapReady"):
+            if time.monotonic()>deadline:raise RuntimeError("Selected POI did not resume planning")
+            time.sleep(.1)
+        state.presenting=False
+        time.sleep(2.8)
+        result["checks"].append("Ambiguous POI is visibly awaiting a choice, overrides stale backend captions, and resumes on selection")
+
         cdp.key("Escape");time.sleep(.7)
         assert cdp.evaluate("window.__sceneMetrics.morphDirection")=="energy"
         assert .05 < cdp.evaluate("window.__sceneMetrics.mapMix") < .95
@@ -282,6 +302,14 @@ def run(check_audio=False):
         assert cdp.evaluate("!window.__navigation.state.mapReady && window.__sceneMetrics.mapMix<.02")
         assert cdp.evaluate("document.getElementById('exitLayer').hidden")
         result["checks"].append("Synthetic fixture: 3D geometry, four left-sidebar travel choices, switching paths, no flat map, Esc restoration")
+        # A failed config request must leave a visible error instead of an old loading caption.
+        cdp.evaluate("window.__savedNavApi=window.__navigation.api;window.__navigation.api=async()=>{throw new Error('测试连接失败')};void window.__navigation.open({action:'route',origin:'测试起点',destination:'测试终点'})")
+        time.sleep(.4)
+        assert cdp.evaluate("window.__navigation.state.mapStage==='error'")
+        assert cdp.evaluate("document.getElementById('coreCaption').textContent.includes('测试连接失败')")
+        assert cdp.evaluate("document.getElementById('subtitle').classList.contains('error')")
+        cdp.evaluate("window.__navigation.close();window.__navigation.api=window.__savedNavApi")
+        result["checks"].append("Failed navigation displays the actual error and retry guidance in the central status")
         result["amap_live_verified"]=False
         result["amap_live_limit"]="This isolated test uses no saved credentials; separate live provider check is recorded independently"
         weather=cdp.evaluate("document.getElementById('temperature').textContent")

@@ -32,6 +32,8 @@ def parse_navigation(text,city="苏州",default_origin=""):
         match=re.search(r"(?:导航到|导航去|路线规划到|规划路线到|规划(?:一下)?(?:到|去)|我要去|我想去|带我去|^去|^到)\s*(.+)$",text)
         if not match:return None
         origin,destination=str(default_origin).strip(),match.group(1)
+    # Spoken follow-up requests belong to the instruction, not the destination POI.
+    destination=re.split(r"[，,；;]\s*(?:(?:请|麻烦)(?:你)?\s*)?(?:帮我|给我|为我)?\s*(?:(?:规划|安排|提供|推荐|显示)(?:一下|一条|一个|个)?(?:导航|出行)?路线|(?:一条|个)?(?:导航|出行)?路线|(?:怎么走|怎么去))",destination,maxsplit=1)[0]
     # Strip transport instructions before the route suffix, preserving the actual POI name.
     destination=re.split(r"[，,；;]\s*(?:请|帮我|我想|我准备|选择|使用|改为|乘坐|乘|坐)?(?:打车|出租车|自驾|开车|驾车|公共交通|公交车|公交|地铁|步行)",destination,maxsplit=1)[0]
     destination=re.sub(r"[，,；;\s]*(?:请|帮我|我想|选择|使用|改为)?(?:打车|出租车|自驾|开车|驾车|公共交通|公交|地铁|步行)(?:的方式|方式)?(?:前往|过去|出发|导航|走|去)?(?:吧|谢谢)?$","",destination)
