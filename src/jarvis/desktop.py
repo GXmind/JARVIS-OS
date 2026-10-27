@@ -381,7 +381,7 @@ class DesktopServer:
                     elif action=="/api/stop":
                         outer.state.audio.stop()
                     elif action=="/api/city/context":
-                        result=city_context(values.get("path",[]))
+                        result=city_context(values.get("path",[]),overview=values.get("overview") is True)
                         self.respond(200,result);return
                     elif action=="/api/navigation/result":
                         outer.state.navigation_result(values)

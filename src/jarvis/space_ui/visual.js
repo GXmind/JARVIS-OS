@@ -162,7 +162,7 @@ export function createVisual(canvas,state,metrics){
  metrics.engine="Three.js r"+THREE.REVISION+" / WebGL2";metrics.particles=18300;
  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,1,.1,60);
  camera.position.set(0,.05,6.8);camera.lookAt(0,0,0);
- const particleCity=createParticleCity(THREE,scene);
+ const particleCity=createParticleCity(THREE,scene,camera);
  const uniforms={uTime:{value:0},uPhase:{value:0},uLevel:{value:0},uDpr:{value:1},uMapMix:{value:0}};
  const ribbons=new THREE.Group();scene.add(ribbons);const geometry=makeRibbonGeometry();
  for(let i=0;i<6;i++){

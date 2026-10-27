@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {resetMapView,orbitView,panView,zoomView,bindMapControls} from "../src/jarvis/space_ui/map_controls.js";
+import {resetMapView,orbitView,panView,zoomView,bindMapControls,rebaseMapView,routeFrame} from "../src/jarvis/space_ui/map_controls.js";
 const state={};resetMapView(state);
 orbitView(state,2400,100);
 assert.ok(state.cityYaw>Math.PI*4,"A continuous horizontal drag must exceed two full revolutions");
@@ -14,7 +14,7 @@ resetMapView(state);assert.equal(state.cityYaw,0);assert.equal(state.cityPanX,0)
 assert.equal(state.cityZoom,1);
 const listeners={};const captures=new Set();
 const canvas={addEventListener:(name,fn)=>listeners[name]=fn,setPointerCapture:id=>captures.add(id),hasPointerCapture:id=>captures.has(id),releasePointerCapture:id=>captures.delete(id)};
-state.mapReady=true;bindMapControls(canvas,state);
+state.mapReady=true;state.cityDragMode="orbit";bindMapControls(canvas,state);
 const event=(id,x,y,extra={})=>({pointerId:id,clientX:x,clientY:y,button:0,preventDefault(){},...extra});
 listeners.pointerdown(event(1,100,100));listeners.pointermove(event(1,500,200));listeners.pointerup(event(1,500,200));
 assert.ok(state.cityYaw>2&&state.cityPitch>.62);assert.equal(captures.size,0);
@@ -26,3 +26,11 @@ assert.ok(state.cityZoom>1.9);assert.ok(state.cityPanX>0);
 listeners.pointercancel(event(2,300,100));listeners.pointercancel(event(1,100,100));
 assert.equal(captures.size,0);
 console.log("Unlimited yaw, bounded pitch, pan/zoom/reset and captured pointer/two-finger gestures passed.");
+
+resetMapView(state);state.cityPanX=35;state.cityPanY=-12;state.cityZoom=2;
+const recentered=rebaseMapView(state,{origin:[120.6,31.3],extent:1600});
+assert.ok(Math.abs(recentered.origin[0]-120.6)>.05,"Panning must move the geographic center beyond the old neighborhood");
+assert.equal(recentered.extent,800,"Zoom must rebase into map scale, not stop at a visual limit");
+const fitted=routeFrame([[120.5,31.2],[120.9,31.5]]);
+assert.ok(fitted.extent>40000);
+console.log("Geographic pan is not limited to the initial district; overview fits a long route.");

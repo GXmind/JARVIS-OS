@@ -1,4 +1,4 @@
-import {DEFAULT_EXTENT,DEFAULT_HEIGHT_SCALE} from "./map_controls.js";
+import {DEFAULT_EXTENT,DEFAULT_HEIGHT_SCALE,routeFrame} from "./map_controls.js";
 /* Accurate source coordinates, polygon courtyards and independently exaggerated architecture. */
 export function inside(point,ring){
  let yes=false;
@@ -21,12 +21,11 @@ export function buildCityPositions(data,path,view="start",focus=null,options={})
  const basis=path.length?path:(data.roads?.[0]?.path||data.buildings?.[0]?.footprint||[]);
  const empty={points:[],colors:[],fades:[],edges:[],streets:[],arterials:[],paths:[],route:[],routeParts:[],labels:[],origin:[0,0],scale:1,renderedBuildings:0};
  if(!basis.length)return empty;
- const overview=view==="overview",localExtent=Math.max(600,Math.min(5000,Number(options.extent)||DEFAULT_EXTENT));
- const origin=overview?[(Math.min(...basis.map(p=>p[0]))+Math.max(...basis.map(p=>p[0])))/2,
-  (Math.min(...basis.map(p=>p[1]))+Math.max(...basis.map(p=>p[1])))/2]:(focus||(view==="end"?basis.at(-1):basis[0]));
+ const overview=view==="overview",localExtent=Math.max(400,Math.min(5000000,Number(options.extent)||DEFAULT_EXTENT));
+ const frame=routeFrame(basis,localExtent);
+ const origin=overview?frame.origin:(focus||(view==="end"?basis.at(-1):basis[0]));
  const cos=Math.cos(origin[1]*Math.PI/180),meters=p=>[(p[0]-origin[0])*111320*cos,(p[1]-origin[1])*111320];
- const routeM=basis.map(meters);
- const extent=overview?Math.max(localExtent,...routeM.map(p=>Math.abs(p[0])*2),...routeM.map(p=>Math.abs(p[1])*2)):localExtent;
+ const routeM=basis.map(meters),extent=overview?frame.extent:localExtent;
  const scale=3.9/extent,bounds=[2.4/scale,1.6/scale],heightScale=Math.max(1,Math.min(32,Number(options.heightScale)||DEFAULT_HEIGHT_SCALE));
  const points=[],colors=[],fades=[],edges=[],streets=[],arterials=[],paths=[],route=[],routeParts=[],labels=[];
  let quota=62000,used=0,visualMaxHeight=0;
@@ -77,6 +76,8 @@ export function buildCityPositions(data,path,view="start",focus=null,options={})
    for(let x=xmin;x<xmax;x+=step)for(let z=zmin;z<zmax;z+=step)
     if(inside([x,z],ring)&&!holes.some(hole=>inside([x,z],hole)))put(x,h,z,[.30,.47,.57]);
   }
+ }
+ {
   for(const road of data.roads||[]){
    if(["ferry","aerialway"].includes(road.kind))continue;
    const path=road.path.map(meters),major=/^(motorway|trunk|primary|secondary|tertiary)$/.test(road.kind);
@@ -93,12 +94,14 @@ export function buildCityPositions(data,path,view="start",focus=null,options={})
    labels.push({name:label.name,position:[x*scale,.035,-z*scale]});if(labels.length>=8)break;
   }
  }
- // Interpolation adds visual grains without changing the provider's actual polyline vertices.
- const spacing=overview?Math.max(12,extent/1000):2;
+ // Keep the entire provider route in the scene. The camera clips visibility, never the data.
+ const totalLength=routeM.slice(1).reduce((sum,p,i)=>sum+Math.hypot(p[0]-routeM[i][0],p[1]-routeM[i][1]),0);
+ const spacing=Math.max(2,totalLength/7500);
+ const fullLine=[];
  for(let i=1;i<routeM.length;i++){
-  const clipped=clipSegment(routeM[i-1],routeM[i],bounds);if(!clipped)continue;
-  const [a,b]=clipped,length=Math.hypot(b[0]-a[0],b[1]-a[1]);
-  const count=Math.min(1200,Math.max(1,Math.ceil(length/spacing))),part=[];
+  const a=routeM[i-1],b=routeM[i],length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+  fullLine.push(a[0]*scale,3*scale,-a[1]*scale,b[0]*scale,3*scale,-b[1]*scale);
+  const count=Math.max(1,Math.ceil(length/spacing)),part=[];
   for(let j=0;j<=count;j++){
    const t=j/count,p=[(a[0]+(b[0]-a[0])*t)*scale,3*scale,-(a[1]+(b[1]-a[1])*t)*scale];
    const last=route.at(-1);if(!last||Math.hypot(...p.map((v,k)=>v-last[k]))>.001)route.push(p);
@@ -107,10 +110,19 @@ export function buildCityPositions(data,path,view="start",focus=null,options={})
   if(part.length>1)routeParts.push(part);
  }
  return {points,colors,fades,edges,streets,arterials,paths,labels,route,routeParts,origin,scale,extent,bounds,
-  renderedBuildings:overview?0:buildings.length,visualMaxHeight,heightScale};
+  renderedBuildings:overview?0:buildings.length,visualMaxHeight,heightScale,fullLine};
 }
-export function createParticleCity(THREE,scene){
+export function createParticleCity(THREE,scene,camera=null){
  const group=new THREE.Group();scene.add(group);group.visible=false;
+ const viewport={value:new THREE.Vector4(0,0,1,1)};
+ function clipToCity(material){
+  material.onBeforeCompile=shader=>{
+   shader.uniforms.uCityViewport=viewport;
+   shader.fragmentShader="uniform vec4 uCityViewport;"+String.fromCharCode(10)+shader.fragmentShader.replace(/void\s+main\(\s*\)\s*\{/,match=>match+" if(gl_FragCoord.x<uCityViewport.x||gl_FragCoord.y<uCityViewport.y||gl_FragCoord.x>uCityViewport.z||gl_FragCoord.y>uCityViewport.w)discard;");
+  };
+  material.customProgramCacheKey=()=>"jarvis-central-map-viewport-v1";
+  return material;
+ }
  const vertex=`
  attribute float aFade;varying vec3 vColor;varying float vFade;
  uniform float uSize;uniform float uMorph;uniform float uTime;
@@ -141,12 +153,12 @@ export function createParticleCity(THREE,scene){
  void main(){float r=length(gl_PointCoord-.5)*2.;if(r>1.)discard;
  float alpha=(1.-smoothstep(.45,1.,r))*uOpacity*vFade;gl_FragColor=vec4(vColor,alpha);}`;
  function pointsMaterial(size){
-  return new THREE.ShaderMaterial({uniforms:{uSize:{value:size},uOpacity:{value:0},uMorph:{value:0},uTime:{value:0}},
+  return clipToCity(new THREE.ShaderMaterial({uniforms:{uSize:{value:size},uOpacity:{value:0},uMorph:{value:0},uTime:{value:0}},
    vertexShader:vertex,fragmentShader:fragment,vertexColors:true,transparent:true,depthWrite:false,
-   blending:THREE.NormalBlending,toneMapped:false});
+   blending:THREE.NormalBlending,toneMapped:false}));
  }
  const geometry=new THREE.BufferGeometry(),material=pointsMaterial(1.15),city=new THREE.Points(geometry,material);group.add(city);
- const lineMaterial=(color)=>new THREE.LineBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,blending:THREE.NormalBlending,toneMapped:false});
+ const lineMaterial=(color)=>clipToCity(new THREE.LineBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,blending:THREE.NormalBlending,toneMapped:false}));
  const edgeG=new THREE.BufferGeometry(),edgeM=lineMaterial(0x88b1ba);
  const wire=new THREE.LineSegments(edgeG,edgeM);wire.renderOrder=1;group.add(wire);city.renderOrder=2;
  const streetsG=new THREE.BufferGeometry(),streetsM=lineMaterial(0x7599b0),streets=new THREE.LineSegments(streetsG,streetsM);group.add(streets);
@@ -162,6 +174,7 @@ export function createParticleCity(THREE,scene){
  const architecture=new THREE.Group();group.add(architecture);architecture.add(city,wire);
  const arterialG=new THREE.BufferGeometry(),arterialM=lineMaterial(0xa1d4df),arterial=new THREE.LineSegments(arterialG,arterialM);group.add(arterial);
  const pathG=new THREE.BufferGeometry(),pathM=new THREE.LineDashedMaterial({color:0x5b8795,dashSize:.012,gapSize:.012,transparent:true,opacity:0,depthWrite:false,toneMapped:false});
+ clipToCity(pathM);
  const footpaths=new THREE.LineSegments(pathG,pathM);group.add(footpaths);
  const labelGroup=new THREE.Group();group.add(labelGroup);
  let revision=-1,built=null;
@@ -181,24 +194,30 @@ export function createParticleCity(THREE,scene){
    for(const label of [...labelGroup.children]){
     label.material.map?.dispose();label.material.dispose();labelGroup.remove(label);
    }
-   for(const item of built.labels){
+   const endpointLabels=(data.path?.length?[{name:"起点 · "+(data.originName||"出发地"),point:data.path[0]},
+    {name:"终点 · "+(data.destinationName||"目的地"),point:data.path.at(-1)}]:[]).map(item=>{
+    const point=item.point;
+    return {name:item.name,endpoint:true,position:[(point[0]-built.origin[0])*111320*Math.cos(built.origin[1]*Math.PI/180)*built.scale,.22,-(point[1]-built.origin[1])*111320*built.scale]};
+   });
+   for(const item of [...built.labels,...endpointLabels]){
     const canvas=document.createElement("canvas");canvas.width=256;canvas.height=48;
     const ctx=canvas.getContext("2d");ctx.font="24px Microsoft YaHei, sans-serif";ctx.textAlign="center";
     ctx.strokeStyle="#02090e";ctx.lineWidth=5;ctx.strokeText(item.name,128,31);
     ctx.fillStyle="#a9cad5";ctx.fillText(item.name,128,31);
     const texture=new THREE.CanvasTexture(canvas);
     const m=new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false,depthWrite:false,toneMapped:false,opacity:0});
-    const sprite=new THREE.Sprite(m);sprite.position.fromArray(item.position);sprite.scale.set(.90,.17,1);sprite.renderOrder=9;labelGroup.add(sprite);
+    clipToCity(m);
+    const sprite=new THREE.Sprite(m);sprite.position.fromArray(item.position);sprite.scale.set(item.endpoint?1.25:.90,item.endpoint ? .22 : .17,1);sprite.userData.endpoint=!!item.endpoint;sprite.renderOrder=9;labelGroup.add(sprite);
    }
    const routeSegments=[];
    for(const part of built.routeParts)for(let i=1;i<part.length;i++)routeSegments.push(...part[i-1],...part[i]);
-   lines(routeLineG,routeSegments);
+   lines(routeLineG,built.fullLine||routeSegments);
    const markers=[];
    for(const p of [data.path?.[0],data.path?.at(-1)]){
     if(!p)continue;
     const x=(p[0]-built.origin[0])*111320*Math.cos(built.origin[1]*Math.PI/180)*built.scale;
     const z=-(p[1]-built.origin[1])*111320*built.scale;
-    if(Math.abs(x)>2.4||Math.abs(z)>1.6)continue;
+
     for(let j=0;j<40;j++){
      const a=j/40*Math.PI*2,b=(j+1)/40*Math.PI*2;
      markers.push(x+Math.cos(a)*.035,.008,z+Math.sin(a)*.035,x+Math.cos(b)*.035,.008,z+Math.sin(b)*.035);
@@ -214,8 +233,16 @@ export function createParticleCity(THREE,scene){
    metrics.cityRoadSegments=((built.streets||[]).length+(built.arterials||[]).length+(built.paths||[]).length)/6;
    metrics.cityCourtyards=(data.context?.buildings||[]).reduce((s,b)=>s+(b.holes?.length||0),0);
    metrics.cityTileZoom=data.context?.tile_zoom||null;metrics.cityLabels=built.labels.length;
+   metrics.cityEndpointCount=endpointLabels.length;metrics.cityFullRouteSegments=(built.fullLine||[]).length/6;
   }
   group.visible=!!built&&mix>.001;if(!group.visible)return;
+  const dprNow=metrics.pixelRatio||1,w=metrics.resolution[0]/dprNow,h=metrics.resolution[1]/dprNow;
+  const left=document.querySelector(".left-rail")?.getBoundingClientRect().right||w*.20;
+  const right=document.querySelector(".right-rail")?.getBoundingClientRect().left||w*.80;
+  viewport.value.set((left+18)*dprNow,h*.28*dprNow,(right-18)*dprNow,h*.76*dprNow);
+  metrics.cityViewport={left:left+18,right:right-18,top:h*.24,bottom:h*.72};
+  state.cityFrame={origin:built.origin,extent:built.extent};
+  metrics.cityFocus=built.origin;
   group.rotation.set(state.cityPitch||.62,-.25+(state.cityYaw||0),0);
   const heightScale=Math.max(1,Math.min(32,Number(state.cityHeightScale)||DEFAULT_HEIGHT_SCALE));
   architecture.scale.y=heightScale/DEFAULT_HEIGHT_SCALE;
@@ -239,5 +266,13 @@ export function createParticleCity(THREE,scene){
    for(let k=0;k<3;k++)sparkPositions[i*3+k]=built.route[a][k]*(1-f)+built.route[b][k]*f;
   }
   sparksG.attributes.position.needsUpdate=true;
+  if(camera&&data.path?.length){
+   group.updateMatrixWorld(true);camera.updateMatrixWorld();
+   metrics.cityEndpointProjection=[data.path[0],data.path.at(-1)].map(p=>{
+    const v=new THREE.Vector3((p[0]-built.origin[0])*111320*Math.cos(built.origin[1]*Math.PI/180)*built.scale,.01,-(p[1]-built.origin[1])*111320*built.scale);
+    v.applyMatrix4(group.matrixWorld).project(camera);
+    return {x:v.x,y:v.y,visible:Math.abs(v.x)<1&&Math.abs(v.y)<1&&v.z>=-1&&v.z<=1};
+   });
+  }
  }};
 }

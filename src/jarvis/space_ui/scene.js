@@ -256,5 +256,5 @@ canvas.onpointerdown=event=>{
 };
 window.__sceneMetrics=metrics;
 import("/map_controls.js").then(({bindMapControls})=>{
- bindMapControls(canvas,state);
+ bindMapControls(canvas,state,{onViewEnd:()=>navigation?.commitView(),onZoom:()=>navigation?.scheduleViewCommit()});
 }).catch(error=>message("地图手势加载失败："+error.message,true));

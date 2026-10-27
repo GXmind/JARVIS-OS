@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 from jarvis.vector_city import decode_tile,polygon_groups
 from jarvis.config import Settings
+from jarvis.city_data import tile_zoom_for_bounds
 
 def vi(value):
  out=bytearray()
@@ -55,3 +56,9 @@ class MapPrecisionTests(unittest.TestCase):
  def test_map_settings_default_to_closer_and_taller_view(self):
   s=Settings().validated()
   self.assertEqual(s.MAP_VIEW_METERS,"1600");self.assertEqual(s.MAP_HEIGHT_SCALE,"16")
+
+class WideMapTests(unittest.TestCase):
+ def test_large_overview_chooses_tiles_covering_the_whole_area(self):
+  self.assertLess(tile_zoom_for_bounds([31.1,120.4,31.5,120.9],True),14)
+ def test_local_details_keep_source_maximum_zoom(self):
+  self.assertEqual(tile_zoom_for_bounds([31.2,120.6,31.21,120.61]),14)

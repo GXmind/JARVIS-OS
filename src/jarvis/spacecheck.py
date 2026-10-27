@@ -260,7 +260,14 @@ def run(check_audio=False):
         cdp.screenshot(ROOT/"docs/city_fixture_transition.png")
         time.sleep(2.4)
         assert cdp.evaluate("window.__sceneMetrics.mapMix")>.99
-        assert cdp.evaluate("window.__sceneMetrics.cityBuildings")==2
+        assert cdp.evaluate("window.__sceneMetrics.cityView")=="overview"
+        assert cdp.evaluate("window.__sceneMetrics.cityEndpointCount")==2
+        assert cdp.evaluate("window.__sceneMetrics.cityEndpointProjection.every(p=>p.visible)")
+        cdp.evaluate("window.__navigation.setView('start')")
+        deadline=time.monotonic()+6
+        while not cdp.evaluate("window.__sceneMetrics.cityView==='start' && window.__sceneMetrics.cityBuildings===2"):
+            if time.monotonic()>deadline:raise RuntimeError("Local detailed street view failed")
+            time.sleep(.1)
         assert cdp.evaluate("window.__sceneMetrics.cityParticles")>100
         assert cdp.evaluate("window.__navigation.options.length")==4
         assert cdp.evaluate("document.getElementById('travelOptions').children.length")==4

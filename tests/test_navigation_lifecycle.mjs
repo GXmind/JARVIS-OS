@@ -5,7 +5,7 @@ class Element{
  replaceChildren(...nodes){this.children=nodes;} append(...nodes){this.children.push(...nodes);}
 }
 const elements=new Map();
-globalThis.document={body:new Element(),querySelectorAll:()=>[],createElement:()=>new Element(),getElementById:id=>{
+globalThis.document={body:new Element(),querySelectorAll:()=>[],createTextNode:text=>text,createElement:()=>new Element(),getElementById:id=>{
  if(!elements.has(id))elements.set(id,new Element());return elements.get(id);
 }};
 const row=(id,location=[120.62,31.32])=>({id,name:"同名公园",cityname:"苏州市",type:"风景名胜;公园",location});
@@ -30,3 +30,16 @@ await assert.rejects(cancelled,/退出导航/);
 assert.equal(c.state.mapStage,"closed");assert.equal(c.routeBusy,false);
 assert.equal(c.controls.children.length,0);
 console.log("Ambiguous-place prompt, continuation and cancellation lifecycle passed.");
+
+const browse=controller([]),responses=[];
+browse.state.mapReady=true;browse.state.cityView="browse";browse.state.cityFocus=[120.6,31.31];
+browse.api=()=>new Promise(resolve=>responses.push(resolve));
+const route=[[120.6,31.31],[120.7,31.32]];
+const first=browse.showScene(route,{},1);
+browse.state.cityFocus=[120.7,31.32];
+const second=browse.showScene(route,{},1);
+responses[1]({buildings:[],roads:[],marker:"new-area"});await second;
+responses[0]({buildings:[],roads:[],marker:"stale-area"});await first;
+assert.equal(browse.state.cityScene.context.marker,"new-area","Late context data must not restore an older map center");
+assert.deepEqual(browse.state.cityScene.focus,[120.7,31.32]);
+console.log("Latest geographic viewport wins over late context responses.");
