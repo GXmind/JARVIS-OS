@@ -73,7 +73,7 @@ $env:PYTHONIOENCODING = 'utf-8'
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -q
 ```
 
-也可双击 `scripts\test.cmd`。当前 main 的基线为 105 项；feature/map-update 增加地图精度与配置测试后为 113 项。实际数量以运行结果为准。
+也可双击 `scripts\test.cmd`。当前 main 的基线为 105 项；feature/map-update 增加地图精度与配置测试后为 116 项。实际数量以运行结果为准。
 
 前端几何、地点及操作测试：
 
@@ -119,3 +119,5 @@ npm test
 | 楼宇缺失 | 城市矢量数据源覆盖及网络；不要拿随机模型填补 |
 
 本机服务绑定 127.0.0.1，不是面向公网部署的 Web 服务。不要为了远程访问而直接改成公开监听。
+
+功能分支另有可复现的合成城市压力脚本 scripts/stress_map.py；操作、缓冲统计与验证范围见 [feature/map-update 稳定性说明](https://github.com/GXmind/JARVIS-OS/blob/feature/map-update/docs/map-stability.md)。main 不包含该功能脚本。
