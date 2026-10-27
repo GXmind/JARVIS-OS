@@ -73,11 +73,12 @@ $env:PYTHONIOENCODING = 'utf-8'
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -q
 ```
 
-也可双击 `scripts\test.cmd`。当前 main 的基线为 105 项；feature/map-update 增加地图精度与配置测试后为 111 项。实际数量以运行结果为准。
+也可双击 `scripts\test.cmd`。当前 main 的基线为 105 项；feature/map-update 增加地图精度与配置测试后为 113 项。实际数量以运行结果为准。
 
 前端几何、地点及操作测试：
 
 ```powershell
+$env:NPM_CONFIG_CACHE = 'F:\Javis_os\cache\npm'
 npm test
 ```
 

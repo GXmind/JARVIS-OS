@@ -96,4 +96,4 @@ AUTO_SPEAK="true"
 
 ## 地图分支附加设置
 
-main 仍保持已发布基线。feature/map-update 额外提供 MAP_VIEW_METERS（600–5000，默认1600）与 MAP_HEIGHT_SCALE（1–32，默认16），用于显示尺度与楼高强调，不需要另申请 API。高度强调不是地理数据源的实际高度。
+main 仍保持已发布基线。feature/map-update 额外提供 MAP_VIEW_METERS（600–5000，默认1600）与 MAP_HEIGHT_SCALE（1–32，默认16），用于局部街区尺度与楼高强调，不需要另申请 API。高度强调不是地理数据源的实际高度。
