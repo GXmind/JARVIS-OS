@@ -127,3 +127,14 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 全程与浏览修订：默认显示完整起终点和周边路网；左键拖动移动地理视野，右键/Shift 拖动环绕，滚轮放大加载街区。“查看全程”恢复整段路线，地图不会覆盖两侧状态栏。
 
 渲染卡顿与退出的修订及可复现压力检查见 [稳定性说明](docs/map-stability.md)。
+
+## 开发与维护
+
+| 说明 | 内容 |
+| --- | --- |
+| [协作说明](CONTRIBUTING.md) | 分支、数据保护、验证与提交约定 |
+| [构建与运行](BUILDING.md) | Windows 环境、一键启动、手动准备及测试 |
+| [API 申请与配置](docs/API_SETUP.md) | 高德、对话、识别和播报的申请与配置 |
+| [架构说明](docs/architecture.md) | 模块、状态流程、存储与数据边界 |
+
+地图精度、楼高与全向操作的开发实现位于 [feature/map-update](https://github.com/GXmind/JARVIS-OS/tree/feature/map-update)。功能开发与合并记录见对应 PR，当前可用能力以所在分支代码为准。
