@@ -24,13 +24,6 @@ git clone --branch main https://github.com/GXmind/JARVIS-OS.git F:\Javis_os
 Set-Location -LiteralPath F:\Javis_os
 ```
 
-如要测试地图开发分支，可在干净的 Git 工作区内切换：
-
-```powershell
-git fetch origin
-git switch feature/map-update
-```
-
 若目标目录已存在，不要删除目录或强制 reset 来重新安装。先检查 `git status` 并保留本机数据；如果现有目录并非 Git 仓库，先整理备份和迁移方案，避免直接覆盖已有文件。
 
 ## 2. 一键运行
@@ -73,7 +66,7 @@ $env:PYTHONIOENCODING = 'utf-8'
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -q
 ```
 
-也可双击 `scripts\test.cmd`。当前 main 的基线为 105 项；feature/map-update 增加地图精度与配置测试后为 116 项。实际数量以运行结果为准。
+也可双击 `scripts\test.cmd`。测试覆盖现有功能与分层依赖约束；实际数量以运行结果为准。tests/test_architecture.py 还检查无设备的服务替换、资源边界及应用层不访问 SQL。
 
 前端几何、地点及操作测试：
 
@@ -82,7 +75,7 @@ $env:NPM_CONFIG_CACHE = 'F:\Javis_os\cache\npm'
 npm test
 ```
 
-`package.json` 没有 npm 运行依赖，不需要先运行 npm install。不同分支的 test 脚本覆盖其对应实现。
+`package.json` 没有 npm 运行依赖，不需要先运行 npm install。测试包括纯几何、POI、导航生命周期、手势与前端模块依赖。
 
 真实浏览器自检：
 
@@ -120,4 +113,11 @@ npm test
 
 本机服务绑定 127.0.0.1，不是面向公网部署的 Web 服务。不要为了远程访问而直接改成公开监听。
 
-地图模块提供可复现的合成城市压力脚本 scripts/stress_map.py；操作、缓冲统计与验证范围见 [feature/map-update 稳定性说明](https://github.com/GXmind/JARVIS-OS/blob/feature/map-update/docs/map-stability.md)。请在包含该脚本的当前版本运行。
+地图模块提供可复现的合成城市压力脚本 scripts/stress_map.py；操作、缓冲统计与验证范围见 [地图稳定性说明](docs/map-stability.md)。请在包含该脚本的当前版本运行。
+
+
+## 源码结构调整后的开发
+
+启动命令不变。main.py 只准备根目录并调用 cli；bootstrap.py 负责服务装配。Python 包改为 domain、application、infrastructure、presentation 与 diagnostics；旧平铺导入已移除。个人脚本按 [架构说明](docs/architecture.md) 更新 import。
+
+网页源文件位于 src/jarvis/presentation/web/assets，使用原生 ES Modules，仍无需 npm install 或前端构建。旧静态 URL 保留兼容响应。重构没有迁移用户 .env、SQLite、录音和缓存，没有数据库升级步骤。

@@ -1,7 +1,7 @@
 # Third-party notices
 
-- **Three.js r180** — https://threejs.org/ — MIT license. Vendored in src/jarvis/space_ui/vendor; retain THREE-LICENSE.txt and the upstream headers.
-- **eviltransform** — https://github.com/googollee/eviltransform — BSD license. Vendored Python coordinate conversion and license in src/jarvis/vendor.
+- **Three.js r180** — https://threejs.org/ — MIT license. Vendored in src/jarvis/presentation/web/assets/vendor; retain THREE-LICENSE.txt and the upstream headers.
+- **eviltransform** — https://github.com/googollee/eviltransform — BSD license. Vendored Python coordinate conversion and license in src/jarvis/infrastructure/vendor.
 - **OpenStreetMap contributors** — https://www.openstreetmap.org/copyright — map data under ODbL. Attribution remains visible in the navigation scene.
 - **OpenFreeMap / OpenMapTiles** — https://openfreemap.org/ and https://openmaptiles.org/ — providers of vector tiles used for the local city; data attribution and applicable service terms remain in force.
 - **AMap / 高德** — https://www.amap.com/ — online SDK, POI, route and weather services. Not redistributed as part of this source repository; credentials, permissions, quotas and the provider's terms apply.

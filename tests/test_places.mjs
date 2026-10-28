@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {rankPlaces,confidentPlace,placePoint,groundDistance} from "../src/jarvis/space_ui/places.js";
+import {rankPlaces,confidentPlace,placePoint,groundDistance} from "../src/jarvis/presentation/web/assets/features/navigation/places.js";
 const rows=[
  {id:"wrong",name:"外市测试咖啡店",cityname:"上海市",type:"050000",location:{lng:121.497583,lat:31.226349}},
  {id:"park",name:"虎丘山风景区",cityname:"苏州市",adname:"姑苏区",address:"山塘街898号",type:"110000",location:{lng:120.580016,lat:31.334584}},

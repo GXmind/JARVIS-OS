@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import {inside,buildCityPositions} from "../src/jarvis/space_ui/city.js";
-import {extractTransit,resolveRouteCommand} from "../src/jarvis/space_ui/navigation.js";
+import {inside,buildCityPositions} from "../src/jarvis/presentation/web/assets/rendering/city_geometry.js";
+import {extractTransit,resolveRouteCommand} from "../src/jarvis/presentation/web/assets/features/navigation/controller.js";
 assert.equal(inside([1,1],[[0,0],[2,0],[2,2],[0,2]]),true);
 assert.equal(inside([4,1],[[0,0],[2,0],[2,2],[0,2]]),false);
 const path=[[120.60,31.31],[120.61,31.32]];

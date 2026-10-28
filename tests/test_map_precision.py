@@ -1,9 +1,9 @@
 import gzip,struct,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
-from jarvis.vector_city import decode_tile,polygon_groups
-from jarvis.config import Settings
-from jarvis.city_data import tile_zoom_for_bounds
+from jarvis.infrastructure.maps.vector_tiles import decode_tile, polygon_groups
+from jarvis.domain.settings import Settings
+from jarvis.infrastructure.maps.city_context import tile_zoom_for_bounds
 
 def vi(value):
  out=bytearray()

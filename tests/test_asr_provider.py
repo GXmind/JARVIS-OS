@@ -7,12 +7,14 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
-from jarvis.paths import ROOT,initialize
+from jarvis.infrastructure.system.paths import ROOT, initialize
 initialize()
-from jarvis.api import CloudAPI,ServiceError
-from jarvis.config import Settings,load_settings,save_settings
-from jarvis.desktop import DesktopState
-from jarvis.storage import Store
+from jarvis.infrastructure.http.openai_compatible import CloudAPI
+from jarvis.domain.errors import ServiceError
+from jarvis.domain.settings import Settings
+from jarvis.infrastructure.config.env_file import load_settings, save_settings
+from jarvis.bootstrap import create_state
+from jarvis.infrastructure.persistence.sqlite import Store
 
 class SpeechProviderTests(unittest.TestCase):
     @classmethod
@@ -94,7 +96,7 @@ class SpeechProviderTests(unittest.TestCase):
 
     def test_deepseek_record_button_reports_configuration_before_capture(self):
         cfg=replace(self.settings,ASR_BASE_URL="https://api.deepseek.com",ASR_MODEL="deepseek-flash")
-        state=DesktopState(cfg,Store(self.path/"test.sqlite3"))
+        state=create_state(cfg,Store(self.path/"test.sqlite3"))
         with patch.object(state.audio,"prepare") as prepare,patch.object(state.audio,"recording") as recording:
             with self.assertRaisesRegex(ServiceError,"F2"):state.record()
         prepare.assert_not_called();recording.assert_not_called()
@@ -108,12 +110,12 @@ class SpeechProviderTests(unittest.TestCase):
         self.assertNotIn("private-provider",text);self.assertNotIn("speech-key-test",text)
 
     def test_independent_key_is_masked_and_empty_save_preserves_it(self):
-        state=DesktopState(self.settings,Store(self.path/"test.sqlite3"))
+        state=create_state(self.settings,Store(self.path/"test.sqlite3"))
         config=state.config_public()
         self.assertEqual(config["ASR_API_KEY"],"")
         self.assertTrue(config["ASR_API_KEY_PRESENT"])
         self.assertNotIn("speech-key-test",json.dumps(config))
-        with patch("jarvis.desktop.save_settings") as save:
+        with patch("jarvis.bootstrap.save_settings") as save:
             state.config_save({"ASR_API_KEY":""})
         self.assertEqual(save.call_args.args[0].ASR_API_KEY,"speech-key-test")
 

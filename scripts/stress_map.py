@@ -5,19 +5,20 @@ from urllib import request
 import json,os,re,subprocess,sys,time,uuid,wave
 root=Path(r"F:\Javis_os")
 sys.path.insert(0,str(root/"src"))
-from jarvis.paths import initialize
+from jarvis.infrastructure.system.paths import initialize
 initialize()
-from jarvis.config import load_settings
-from jarvis.desktop import DesktopState,DesktopServer,browser_path
-from jarvis.spacecheck import DevTools
-from jarvis.storage import Store
-from jarvis.audio import Audio
-from jarvis.navigation import parse_navigation
-from jarvis.api import ServiceError
+from jarvis.infrastructure.config.env_file import load_settings
+from jarvis.bootstrap import create_state, create_server
+from jarvis.presentation.desktop.window import browser_path
+from jarvis.diagnostics.browser_check import DevTools
+from jarvis.infrastructure.persistence.sqlite import Store
+from jarvis.infrastructure.audio.service import Audio
+from jarvis.domain.navigation import parse_navigation
+from jarvis.domain.errors import ServiceError
 settings=load_settings()
 report={"ok":False,"center_only_revision":True}
-state=DesktopState(replace(settings,CHAT_MODE="mock",ASR_MODE="off",AUTO_SPEAK="false",AMAP_JS_KEY="",AMAP_SECURITY_JSCODE=""),Store(root/"tmp"/("revision_live_"+uuid.uuid4().hex+".sqlite3")))
-server=DesktopServer(state);server.start()
+state=create_state(replace(settings,CHAT_MODE="mock",ASR_MODE="off",AUTO_SPEAK="false",AMAP_JS_KEY="",AMAP_SECURITY_JSCODE=""),Store(root/"tmp"/("revision_live_"+uuid.uuid4().hex+".sqlite3")))
+server=create_server(state);server.start()
 profile=root/"tmp"/("revision_browser_"+uuid.uuid4().hex);profile.mkdir()
 cdp=None;process=None
 def wait_for(expression,seconds,label):

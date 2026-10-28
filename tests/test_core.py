@@ -10,15 +10,17 @@ import unittest
 from unittest.mock import patch
 import wave
 
-from jarvis.paths import ROOT, initialize, local_path
+from jarvis.infrastructure.system.paths import ROOT, initialize, local_path
 initialize()
-from jarvis.api import CloudAPI, ServiceError
-from jarvis.audio import Audio
-from jarvis.config import Settings, load_settings, save_settings, api_base
-from jarvis.emotion import RuleEmotion
-from jarvis.logging_setup import SecretFilter
-from jarvis.service import Conversation
-from jarvis.storage import Store
+from jarvis.infrastructure.http.openai_compatible import CloudAPI
+from jarvis.domain.errors import ServiceError
+from jarvis.infrastructure.audio.service import Audio
+from jarvis.domain.settings import Settings, api_base
+from jarvis.infrastructure.config.env_file import load_settings, save_settings
+from jarvis.domain.emotion import RuleEmotion
+from jarvis.infrastructure.system.logging import SecretFilter
+from jarvis.application.conversation import Conversation
+from jarvis.infrastructure.persistence.sqlite import Store
 
 class CoreTests(unittest.TestCase):
     def setUp(self):
@@ -84,7 +86,7 @@ class CoreTests(unittest.TestCase):
 
     def test_explicit_memory_and_delete(self):
         sid = self.store.new_session()
-        service = Conversation(self.store)
+        service = Conversation(self.store,cloud_factory=CloudAPI)
         service.reply(sid, "我喜欢咖啡", Settings())
         self.assertEqual(self.store.memories(), [])
         service.reply(sid, "/记住 我喜欢咖啡", Settings())
@@ -104,7 +106,7 @@ class CoreTests(unittest.TestCase):
     def test_mock_never_calls_cloud(self):
         sid = self.store.new_session()
         with patch.object(CloudAPI, "chat", side_effect=AssertionError("No cloud")):
-            reply, state = Conversation(self.store).reply(sid, "你好", Settings())
+            reply, state = Conversation(self.store,cloud_factory=CloudAPI).reply(sid, "你好", Settings())
         self.assertIn("模拟", reply)
         self.assertEqual(len(self.store.history(sid)), 2)
 
@@ -113,7 +115,7 @@ class CoreTests(unittest.TestCase):
         self.store.remember("用户喜欢喝咖啡")
         cfg = Settings(API_BASE_URL="https://example.com/v1", API_KEY="test-only", API_MODEL="test-model", CHAT_MODE="api")
         with patch.object(CloudAPI, "chat", return_value="好的") as call:
-            answer, _ = Conversation(self.store).reply(sid, "咖啡", cfg)
+            answer, _ = Conversation(self.store,cloud_factory=CloudAPI).reply(sid, "咖啡", cfg)
         self.assertEqual(answer, "好的")
         messages = call.call_args.args[0]
         self.assertIn("咖啡", messages[1]["content"])
@@ -124,7 +126,7 @@ class CoreTests(unittest.TestCase):
         cfg = Settings(API_BASE_URL="https://example.com/v1", API_KEY="test-only", API_MODEL="test-model", CHAT_MODE="api")
         with patch.object(CloudAPI, "chat", side_effect=ServiceError("测试错误")):
             with self.assertRaises(ServiceError):
-                Conversation(self.store).reply(sid, "请回复", cfg)
+                Conversation(self.store,cloud_factory=CloudAPI).reply(sid, "请回复", cfg)
         self.assertEqual(self.store.history(sid), [{"role": "user", "content": "请回复"}])
 
     def test_secret_log_redaction(self):
@@ -134,30 +136,30 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("sk-test-secret", record.getMessage())
 
     def test_missing_audio_is_actionable(self):
-        from jarvis.audio import sounddevice
+        from jarvis.infrastructure.audio.service import sounddevice
         import builtins
         real_import = builtins.__import__
         def no_sd(name, *args, **kwargs):
             if name == "sounddevice":
                 raise ImportError()
             return real_import(name, *args, **kwargs)
-        with patch("builtins.__import__", side_effect=no_sd), patch("jarvis.native_audio.WinMM", side_effect=OSError()), self.assertRaisesRegex(ServiceError, "文字"):
+        with patch("builtins.__import__", side_effect=no_sd), patch("jarvis.infrastructure.audio.winmm.WinMM", side_effect=OSError()), self.assertRaisesRegex(ServiceError, "文字"):
             sounddevice()
 
     def test_native_fallback_without_optional_package(self):
         import builtins
-        from jarvis.audio import sounddevice
+        from jarvis.infrastructure.audio.service import sounddevice
         real_import = builtins.__import__
         marker = object()
         def no_sd(name, *args, **kwargs):
             if name == "sounddevice":
                 raise ImportError()
             return real_import(name, *args, **kwargs)
-        with patch("builtins.__import__", side_effect=no_sd), patch("jarvis.native_audio.WinMM", return_value=marker):
+        with patch("builtins.__import__", side_effect=no_sd), patch("jarvis.infrastructure.audio.winmm.WinMM", return_value=marker):
             self.assertIs(sounddevice(), marker)
 
     def test_native_device_mapping_rejects_wrong_direction(self):
-        from jarvis.native_audio import WinMM, MAPPER
+        from jarvis.infrastructure.audio.winmm import WinMM, MAPPER
         backend = object.__new__(WinMM)
         backend.rows = [{"native_id": 7, "direction": "in"}]
         self.assertEqual(backend.native_device(None, "out"), MAPPER)
@@ -169,7 +171,7 @@ class CoreTests(unittest.TestCase):
 
     def test_native_windows_structure_sizes(self):
         import ctypes
-        from jarvis.native_audio import WaveFormat, Header, InputCaps, OutputCaps
+        from jarvis.infrastructure.audio.winmm import WaveFormat, Header, InputCaps, OutputCaps
         self.assertEqual(ctypes.sizeof(WaveFormat), 18)
         self.assertEqual(ctypes.sizeof(Header), 48 if ctypes.sizeof(ctypes.c_void_p) == 8 else 32)
         self.assertEqual(ctypes.sizeof(InputCaps), 80)
@@ -196,13 +198,13 @@ class CoreTests(unittest.TestCase):
         class FakeSD:
             RawOutputStream = Stream
         audio = Audio()
-        with patch("jarvis.audio.sounddevice", return_value=FakeSD):
+        with patch("jarvis.infrastructure.audio.service.sounddevice", return_value=FakeSD):
             audio.play(path, Settings(OUTPUT_DEVICE="3"))
         self.assertEqual(Stream.kwargs["device"], 3)
         self.assertGreater(Stream.writes, 0)
         audio.stop()
         Stream.writes = 0
-        with patch("jarvis.audio.sounddevice", return_value=FakeSD):
+        with patch("jarvis.infrastructure.audio.service.sounddevice", return_value=FakeSD):
             audio.play(path, Settings())
         self.assertEqual(Stream.writes, 0)
 
@@ -221,7 +223,7 @@ class CoreTests(unittest.TestCase):
         class FakeSD:
             RawInputStream = Stream
         audio = Audio()
-        with patch("jarvis.audio.sounddevice", return_value=FakeSD):
+        with patch("jarvis.infrastructure.audio.service.sounddevice", return_value=FakeSD):
             output = audio.recording(Settings(INPUT_DEVICE="2"))
         self.addCleanup(output.unlink)
         with wave.open(str(output)) as file:

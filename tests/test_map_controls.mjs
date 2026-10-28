@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {resetMapView,orbitView,panView,zoomView,bindMapControls,rebaseMapView,routeFrame} from "../src/jarvis/space_ui/map_controls.js";
+import {resetMapView,orbitView,panView,zoomView,bindMapControls,rebaseMapView,routeFrame} from "../src/jarvis/presentation/web/assets/features/map/controls.js";
 const state={};resetMapView(state);
 orbitView(state,2400,100);
 assert.ok(state.cityYaw>Math.PI*4,"A continuous horizontal drag must exceed two full revolutions");

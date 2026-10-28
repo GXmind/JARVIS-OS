@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {NavigationController} from "../src/jarvis/space_ui/navigation.js";
+import {NavigationController} from "../src/jarvis/presentation/web/assets/features/navigation/controller.js";
 class Element{
  constructor(){this.children=[];this.textContent="";this.hidden=false;this.classList={add(){},remove(){},toggle(){}};}
  replaceChildren(...nodes){this.children=nodes;} append(...nodes){this.children.push(...nodes);}

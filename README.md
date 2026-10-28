@@ -102,17 +102,20 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 
     .\.venv\Scripts\python.exe -B main.py --self-check --audio --tts
 
-麦克风测试会实际录音；播放调用成功不能代替人耳确认音质。常规浏览器自检使用模拟 SDK 和独立数据库，不使用真实地图凭证；真实服务联调需要使用者自行配置。发布前本机 116 项 Python 单元测试和实际 WebGL 正反向动画检查已通过。
+麦克风测试会实际录音；播放调用成功不能代替人耳确认音质。常规浏览器自检使用模拟 SDK 和独立数据库，不使用真实地图凭证；真实服务联调需要使用者自行配置。当前检查范围与结果见 [开发验证](docs/verification.md)。
 
 ## 项目结构
 
-    src/jarvis/             Python 后端、音频、导航、存储与设置
-    src/jarvis/space_ui/    网页界面与 Three.js 粒子渲染
-    config/.env.example    无密钥配置模板
-    scripts/               Windows 启动、自检、测试辅助
-    tests/                 离线单元测试及 SDK/几何测试
-    training/              训练设计与待审核合成示例
-    docs/                  公开架构说明与界面预览
+    main.py                         固定根目录与启动引导
+    src/jarvis/bootstrap.py         服务装配
+    src/jarvis/domain/              纯规则与状态
+    src/jarvis/application/         会话、对话用例与可替换端口
+    src/jarvis/infrastructure/      API、音频、数据库、配置、地图及天气
+    src/jarvis/presentation/        HTTP、桌面窗口、网页与历史 Tkinter
+    src/jarvis/diagnostics/         自检与浏览器验证
+    config/.env.example             无密钥配置模板
+    scripts/、tests/                启动、回归与压力检查
+    training/、docs/                训练设计与文档
 
 更多说明见 [架构与模块](docs/architecture.md) 和 [开发验证](docs/verification.md)。
 
@@ -120,9 +123,9 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 
 项目沿用仓库现有的 [Apache License 2.0](LICENSE)。Three.js 使用 MIT，eviltransform 使用 BSD，原始许可随相应文件附带。地图数据及归属说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-## feature/map-update
+## 地图功能
 
-本分支改善近景几何、建筑内院和底高，增加 ×1–×32 楼高强调与完整水平环绕、俯仰、平移、缩放及复位。详见 [地图更新说明](docs/map-update.md)。
+地图模块改善近景几何、建筑内院和底高，增加 ×1–×32 楼高强调与完整水平环绕、俯仰、平移、缩放及复位。详见 [地图更新说明](docs/map-update.md)。
 
 全程与浏览修订：默认显示完整起终点和周边路网；左键拖动移动地理视野，右键/Shift 拖动环绕，滚轮放大加载街区。“查看全程”恢复整段路线，地图不会覆盖两侧状态栏。
 
@@ -137,4 +140,4 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 | [API 申请与配置](docs/API_SETUP.md) | 高德、对话、识别和播报的申请与配置 |
 | [架构说明](docs/architecture.md) | 模块、状态流程、存储与数据边界 |
 
-地图精度、楼高与全向操作的开发实现位于 [feature/map-update](https://github.com/GXmind/JARVIS-OS/tree/feature/map-update)。功能开发与合并记录见对应 PR，当前可用能力以所在分支代码为准。
+地图更新已由 [PR #1](https://github.com/GXmind/JARVIS-OS/pull/1) 合入 main。软件结构采用分层与端口适配器，新增能力的落点和依赖规则见协作及架构说明。

@@ -3,19 +3,19 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile,unittest,wave,time
-from jarvis.desktop import DesktopState
-from jarvis.storage import Store
+from jarvis.bootstrap import create_state
+from jarvis.infrastructure.persistence.sqlite import Store
 from unittest.mock import patch
-from jarvis.paths import ROOT,initialize
+from jarvis.infrastructure.system.paths import ROOT, initialize
 initialize()
-from jarvis.native_audio import OutputStream,DONE
-from jarvis.navigation import NavigationBridge,parse_navigation
-from jarvis.presentation import lines_for_speech
-from jarvis.city_data import parse_elements,validated_path
-from jarvis.vector_city import varint,rings_of,decode_tile
-from jarvis.weather import Weather
-from jarvis.audio import Audio
-from jarvis.config import Settings
+from jarvis.infrastructure.audio.winmm import OutputStream, DONE
+from jarvis.domain.navigation import NavigationBridge, parse_navigation
+from jarvis.domain.text import lines_for_speech
+from jarvis.infrastructure.maps.city_context import parse_elements, validated_path
+from jarvis.infrastructure.maps.vector_tiles import varint, rings_of, decode_tile
+from jarvis.infrastructure.weather.provider import Weather
+from jarvis.infrastructure.audio.service import Audio
+from jarvis.domain.settings import Settings
 
 class RevisionTests(unittest.TestCase):
     def test_default_trip_compares_modes(self):
@@ -62,7 +62,7 @@ class RevisionTests(unittest.TestCase):
                 for header in self.headers:header.flags|=DONE
         driver=Driver()
         backend=SimpleNamespace(lib=driver,native_device=lambda _device,_direction:0)
-        with patch("jarvis.native_audio.time.sleep",side_effect=driver.advance):
+        with patch("jarvis.infrastructure.audio.winmm.time.sleep",side_effect=driver.advance):
             with OutputStream(backend,samplerate=24000,channels=1,dtype="int16") as stream:
                 for _ in range(4):stream.write(b"\0\0"*2048)
                 self.assertEqual(len(driver.headers),4)
@@ -96,7 +96,7 @@ class RevisionTests(unittest.TestCase):
         self.assertIsNone(weather.data)
     def test_new_text_interrupts_previous_line_presentation(self):
         with tempfile.TemporaryDirectory(dir=ROOT/"tmp") as temp:
-            state=DesktopState(Settings(),Store(Path(temp)/"test.sqlite3"))
+            state=create_state(Settings(),Store(Path(temp)/"test.sqlite3"))
             with patch.object(state.conversation,"reply",side_effect=[("第一段。第二段要等待。",None),("新的回答。",None)]):
                 state.send("第一条消息")
                 deadline=time.monotonic()+2
