@@ -14,7 +14,7 @@ export function createParticleCity(THREE,scene,camera=null){
  }
  const vertex=`
  attribute float aFade;varying vec3 vColor;varying float vFade;
- uniform float uSize;uniform float uMorph;uniform float uTime;
+ uniform float uSize;uniform float uMorph;uniform float uTime;uniform float uFlight;uniform vec2 uDirection;
  float hash(float n){return fract(sin(n)*43758.5453);}
  vec3 energy(float seed){
   float a=hash(seed+1.)*6.2831853+uTime*.048;
@@ -36,13 +36,24 @@ export function createParticleCity(THREE,scene,camera=null){
   float swirl=sin(t*3.14159265);
   p+=vec3(sin(seed+uTime*.7),cos(seed*.7+uTime*.5),sin(seed*.3))*swirl*.32;
   vColor=mix(vec3(.61,.80,.91),color,t);vFade=mix(.75,aFade,t);
-  gl_Position=projectionMatrix*viewMatrix*vec4(p,1.);gl_PointSize=uSize;
+  float travel=smoothstep(hash(seed+8.)*.10,1.,uFlight);
+  vec2 direction=normalize(uDirection+vec2(.00001));
+  vec3 tangent=vec3(-direction.y,direction.x,0.);
+  p+=tangent*(sin(seed*.13+uTime*12.)*.025+(hash(seed+9.)-.5)*.16)*sin(travel*3.14159265);
+  p.z+=sin(seed*.3+uTime*2.)*.20*sin(travel*3.14159265);
+  vColor=mix(vColor,vec3(.55,.90,1.),sin(travel*3.14159265)*.75);
+  vFade*=1.-smoothstep(.97,1.,travel);
+  vec4 clip=projectionMatrix*viewMatrix*vec4(p,1.);
+  vec2 edge=direction/max(abs(direction.x),abs(direction.y))*1.12;
+  clip.xy=mix(clip.xy,edge*clip.w,pow(travel,1.45));
+  clip.xy+=vec2(-direction.y,direction.x)*sin(seed*.07+uTime*8.)*.035*clip.w*sin(travel*3.14159265);
+  gl_Position=clip;gl_PointSize=uSize*(1.+sin(travel*3.14159265)*1.1);
  }`;
  const fragment=`varying vec3 vColor;varying float vFade;uniform float uOpacity;
  void main(){float r=length(gl_PointCoord-.5)*2.;if(r>1.)discard;
  float alpha=(1.-smoothstep(.45,1.,r))*uOpacity*vFade;gl_FragColor=vec4(vColor,alpha);}`;
  function pointsMaterial(size){
-  return clipToCity(new THREE.ShaderMaterial({uniforms:{uSize:{value:size},uOpacity:{value:0},uMorph:{value:0},uTime:{value:0}},
+  return clipToCity(new THREE.ShaderMaterial({uniforms:{uSize:{value:size},uOpacity:{value:0},uMorph:{value:0},uTime:{value:0},uFlight:{value:0},uDirection:{value:new THREE.Vector2(1,0)}},
    vertexShader:vertex,fragmentShader:fragment,vertexColors:true,transparent:true,depthWrite:false,
    blending:THREE.NormalBlending,toneMapped:false}));
  }
@@ -65,6 +76,8 @@ export function createParticleCity(THREE,scene,camera=null){
  const pathG=new THREE.BufferGeometry(),pathM=new THREE.LineDashedMaterial({color:0x5b8795,dashSize:.012,gapSize:.012,transparent:true,opacity:0,depthWrite:false,toneMapped:false});
  clipToCity(pathM);
  const footpaths=new THREE.LineSegments(pathG,pathM);group.add(footpaths);
+ const dustG=new THREE.BufferGeometry(),dustM=pointsMaterial(1.35),dust=new THREE.Points(dustG,dustM);group.add(dust);dust.visible=false;
+ let dustRevision=null;
  const labelGroup=new THREE.Group();group.add(labelGroup);
  let revision=-1,built=null,lastBudget=0;
  function attributes(g,positions,colors,fades){
@@ -106,7 +119,7 @@ export function createParticleCity(THREE,scene,camera=null){
   }
   attr.needsUpdate=true;
  }
- return {update(state,mix,time,metrics){
+ return {hide(){group.visible=false;},update(state,mix,time,metrics,transfer={active:false,flight:0,direction:{x:1,y:0}}){
   const data=state.cityScene;
   const budget=state.cityParticleBudget||36000;
   if(data&&(state.cityRevision!==revision||budget!==lastBudget)){
@@ -160,8 +173,21 @@ export function createParticleCity(THREE,scene,camera=null){
   group.visible=!!built&&mix>.001;if(!group.visible)return;
   const dprNow=metrics.pixelRatio||1,w=metrics.resolution[0]/dprNow,h=metrics.resolution[1]/dprNow;
   const left=document.querySelector(".left-rail")?.getBoundingClientRect().right||w*.20;
-  const right=document.querySelector(".right-rail")?.getBoundingClientRect().left||w*.80;
-  viewport.value.set((left+18)*dprNow,h*.28*dprNow,(right-18)*dprNow,h*.76*dprNow);
+  const right=state.mapOnly?w-12:(document.querySelector(".right-rail")?.getBoundingClientRect().left||w*.80);
+  if(transfer.active)viewport.value.set(0,0,w*dprNow,h*dprNow);
+  else viewport.value.set((left+18)*dprNow,h*(state.mapOnly?.25:.28)*dprNow,(right-18)*dprNow,h*(state.mapOnly?.85:.76)*dprNow);
+  dust.visible=transfer.active;
+  if(transfer.active&&dustRevision!==revision){
+   dustRevision=revision;const positions=[];
+   for(const array of [built.streets||[],built.arterials||[],built.paths||[],built.edges||[],built.fullLine||[]]){
+    for(let i=0;i+5<array.length&&positions.length<36000;i+=6){
+     const length=Math.hypot(array[i+3]-array[i],array[i+4]-array[i+1],array[i+5]-array[i+2]);
+     const count=Math.min(8,Math.max(1,Math.ceil(length/.025)));
+     for(let j=0;j<count&&positions.length<36000;j++)for(let k=0;k<3;k++)positions.push(array[i+k]+(array[i+3+k]-array[i+k])*j/count);
+    }
+   }
+   attributes(dustG,positions,Array(positions.length/3).fill([.55,.80,.95]).flat(),Array(positions.length/3).fill(1));
+  }
   metrics.cityViewport={left:left+18,right:right-18,top:h*.24,bottom:h*.72};
   state.cityFrame={origin:built.origin,extent:built.extent};
   metrics.cityFocus=built.origin;
@@ -177,6 +203,15 @@ export function createParticleCity(THREE,scene,camera=null){
   material.uniforms.uOpacity.value=enter*.72;routeM.uniforms.uOpacity.value=enter*.95;
   edgeM.opacity=arrival*.58;streetsM.opacity=arrival*.46;arterialM.opacity=arrival*.72;pathM.opacity=arrival*.32;
   for(const label of labelGroup.children)label.material.opacity=arrival*.70;routeLineM.opacity=arrival*.90;pinsM.opacity=arrival*.95;
+  const assembled=transfer.active?1-THREE.MathUtils.smoothstep(transfer.flight,0,.25):1;
+  for(const line of [edgeM,streetsM,arterialM,pathM,routeLineM,pinsM])line.opacity*=assembled;
+  for(const label of labelGroup.children)label.material.opacity*=assembled;
+  for(const pointM of [material,routeM,sparksM,dustM]){
+   pointM.uniforms.uFlight.value=transfer.active?transfer.flight:0;
+   pointM.uniforms.uDirection.value.set(transfer.direction.x,transfer.direction.y);
+  }
+  dustM.uniforms.uOpacity.value=transfer.active?.85:0;dustM.uniforms.uMorph.value=1;dustM.uniforms.uTime.value=time;
+
   sparksM.uniforms.uOpacity.value=arrival*.86;
   const dpr=metrics.pixelRatio||1;
   for(const m of [material,routeM,sparksM]){m.uniforms.uMorph.value=mix;m.uniforms.uTime.value=time;}

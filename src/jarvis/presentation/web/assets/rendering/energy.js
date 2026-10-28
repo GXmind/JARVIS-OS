@@ -1,3 +1,4 @@
+import {transferFrame} from "./transfer.js";
 import {createParticleCity} from "./city.js";
 import * as THREE from "../vendor/three.module.js";
 import {ribbonGLSL,meshVertex,meshFragment,pointsVertex,pointsFragment,screenVertex,thresholdFragment,blurFragment,combineFragment} from "./shaders.js";
@@ -86,17 +87,31 @@ export function createVisual(canvas,state,metrics){
  function draw(stamp){
   if(!running)return;requestAnimationFrame(draw);
   if(document.hidden){last=stamp;previous=stamp;return;}
-  const activeBudget=state.mapReady?Math.max(budget,1000/24):budget;
+  const activeBudget=state.mapReady&&!state.mapDetached?Math.max(budget,1000/24):budget;
   const delta=stamp-last;if(delta<activeBudget-1)return;last=stamp-(delta%activeBudget);
   const begin=performance.now(),dt=Math.min((stamp-previous)/1000,.1);previous=stamp;elapsed+=dt;
   phase+=(Number(state.phase==="dialogue")-phase)*Math.min(1,dt*2.2);level+=(Number(state.level||0)-level)*Math.min(1,dt*8);
-  // A time-based, reversible flight lasts 2.6 seconds; city particles travel, rather than crossfade.
-  const target=Number(!!state.mapReady);
-  mapMix=THREE.MathUtils.clamp(mapMix+Math.sign(target-mapMix)*dt/2.6,0,1);
+  const transfer=transferFrame(state.mapTransfer,stamp);
+  let renderState=state,cityMix;
+  if(state.mapTransfer&&!transfer.active&&!state.mapTransfer.finished){
+   state.mapTransfer.finished=true;mapMix=state.mapTransfer.phase==="depart"?0:1;
+  }
+  if(transfer.active){
+   mapMix=transfer.energyMix;cityMix=1;
+   if(transfer.phase==="depart")renderState={...state,...state.mapTransfer.source,cityRevision:-1000000-state.mapTransfer.started,mapTransfer:state.mapTransfer};
+  }else{
+   const target=Number(!!state.mapReady);
+   mapMix=THREE.MathUtils.clamp(mapMix+Math.sign(target-mapMix)*dt/2.6,0,1);cityMix=mapMix;
+  }
   uniforms.uMapMix.value=THREE.MathUtils.smoothstep(mapMix,0,.48);metrics.mapMix=Number(mapMix.toFixed(3));
-  metrics.morphDuration=2.6;metrics.morphDirection=mapMix===target?"stable":target?"city":"energy";
-  particleCity.update(state,mapMix,elapsed,metrics);
-  for(const orbit of orbits)orbit.visible=mapMix<.95;
+  metrics.transferPhase=transfer.active?transfer.phase:"idle";metrics.transferProgress=Number(transfer.progress.toFixed(3));
+  metrics.transferDirection=transfer.direction;metrics.morphDuration=2.6;
+  metrics.morphDirection=transfer.active?"transfer":mapMix===Number(!!state.mapReady)?"stable":state.mapReady?"city":"energy";
+  if(!transfer.active&&!state.mapReady&&mapMix===0)particleCity.hide();
+  else particleCity.update(renderState,cityMix,elapsed,metrics,transfer);
+  for(const orbit of orbits)orbit.visible=!state.mapOnly&&mapMix<.95;
+  ribbons.visible=!state.mapOnly;
+  for(let i=1;i<layers.length;i++)layers[i].visible=!state.mapOnly;
   uniforms.uTime.value=elapsed;uniforms.uPhase.value=phase;uniforms.uLevel.value=level;ribbons.rotation.z=Math.sin(elapsed*.08)*.055;
   for(let i=0;i<orbits.length;i++)orbits[i].rotation.z+=dt*(i%2?.016:-.012);
   renderer.info.reset();renderer.setRenderTarget(sceneTarget);renderer.render(scene,camera);

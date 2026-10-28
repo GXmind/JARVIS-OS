@@ -17,9 +17,9 @@ function updateHUD(){
  $("voiceTrigger").classList.toggle("recording",!!state.capturing);
  $("voiceDockLeft").textContent=state.capturing?"LISTENING":"PC MICROPHONE";
  const captions={idle:state.phase==="initial"?"等待您的下一句指令":"与你同在",listening:"正在聆听",thinking:"正在整理思绪",speaking:"正在回应您"};
- $("coreCaption").textContent=state.mapReady?(state.mapSummary||"高德地图 · 路线预览"):
-  state.mapOpen?(state.mapStatus||"正在准备导航…"):(captions[activity]||"等待指令");
- $("coreMode").textContent=state.mapReady?"PARTICLE CITY / 三维导航":state.mapOpen?
+ $("coreCaption").textContent=(state.mapReady&&!state.mapDetached)?(state.mapSummary||"高德地图 · 路线预览"):
+  (state.mapOpen&&!state.mapDetached)?(state.mapStatus||"正在准备导航…"):(captions[activity]||"等待指令");
+ $("coreMode").textContent=(state.mapReady&&!state.mapDetached)?"PARTICLE CITY / 三维导航":(state.mapOpen&&!state.mapDetached)?
   (state.mapStage==="await_choice"?"WAITING / 请确认地点":state.mapStage==="error"?"NAVIGATION / 规划未完成":"NAVIGATION / 正在规划"):
   state.phase==="initial"?"INITIAL / 待机形态":"DIALOGUE / 对话形态";
  $("audioLabel").textContent=state.capturing?"MIC INPUT":activity==="speaking"?"VOICE OUTPUT":"STANDBY";

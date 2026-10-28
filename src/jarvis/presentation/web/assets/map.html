@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS · 地图</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/hand.css">
+<script nonce="__TOKEN__">window.JARVIS_TOKEN="__TOKEN__";</script><script type="module" src="/map.js"></script></head>
+<body class="map-replica map-open"><canvas id="space" aria-label="独立三维地图"></canvas><div class="screen-grain"></div>
+<header class="masthead"><div class="brand"><span class="brand-orbit">✦</span><div><strong>J.A.R.V.I.S.</strong><small>MAP WORKSPACE</small></div></div><span id="replicaStatus">正在连接主窗口…</span><button id="returnPrimary" type="button" class="plain">关闭此地图 / Esc</button></header>
+<aside class="left-rail"><section id="travelPanel" class="instrument travel-instrument"><div class="section-heading"><span>通行方案</span><small>TRAVEL</small></div>
+<div class="trip-location"><small id="travelOriginSource"></small><span id="travelOrigin"></span><small id="resolvedOrigin" class="resolved-place"></small></div>
+<div class="trip-location"><small>终点</small><span id="travelDestination"></span><small id="resolvedDestination" class="resolved-place"></small></div><p id="travelStatus"></p>
+<div class="city-view-options"><button data-city-view="start">起点街区</button><button data-city-view="end">终点街区</button><button data-city-view="overview">全程</button></div><div id="travelOptions"></div></section></aside>
+<section id="mapStage" class="city-overlay"><div id="cityViewLabel"></div><p id="cityDataNote"></p><small class="city-controls">左键移动 · 右键或 Shift 旋转 · 滚轮缩放 · 摄像头手势由主窗口接收</small>
+<div class="map-tools"><label>高度强调 <input id="cityHeight" type="range" min="1" max="32" value="16"><output id="cityHeightValue">×16</output></label><button id="cityDragMode">拖动：移动</button><button id="cityReset">查看全程</button></div></section>
+<div class="replica-caption"><span id="replicaSummary"></span><small>独立地图窗口 · 语音输入仅在主窗口</small></div><div id="subtitle" role="status"></div>
+</body></html>

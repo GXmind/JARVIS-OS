@@ -8,3 +8,6 @@
 - Optional sounddevice / PortAudio dependencies are installed separately; their respective licenses apply.
 
 The repository's Apache-2.0 license applies to original project code and does not replace third-party licenses.
+
+
+- Optional **MediaPipe Tasks Vision 0.10.21** — https://github.com/google-ai-edge/mediapipe — Apache-2.0 code, downloaded from the official npm package. Hand Landmarker model bundle is downloaded from Google's mediapipe-models distribution; model documentation/card: https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker . Versioned URLs and SHA-256 digests are recorded in config/hand-runtime.json. Downloaded runtime/model assets are kept in the user's project-local cache and are not redistributed in this repository.

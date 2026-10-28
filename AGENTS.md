@@ -12,3 +12,6 @@
 - Run relevant unittest and npm tests. Structural/render changes also require actual Chromium and map pressure checks. Distinguish live provider checks from fixtures and device-call success from confirmed audible quality.
 - Do not invent successful navigation, building data or trained emotion models. Preserve attribution and third-party licenses.
 - Never force-push or rewrite shared history. Inspect remote changes before synchronization. Review staged files and secrets before publishing.
+
+- For hand tracking, keep frames local and the camera off by default. Stop tracks/workers on disable, hidden primary, disconnect and exit; test cancellation and backpressure. Never publish camera images or downloaded model caches.
+- Voice and camera input belong only to the primary. A transferred map owns an independent controller, view and close action; primary dialogue/new navigation/closing navigation must never mutate or close it. Freeze the transfer seed, reject stale window epochs and bound the explicit camera mailbox. Restricted map capabilities must reject recording, dialogue, settings and global shutdown. Verify departure/arrival particles and distinguish one-monitor checks from physical extended-display validation.

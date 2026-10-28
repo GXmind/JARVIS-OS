@@ -6,6 +6,7 @@ import time
 from jarvis.domain.errors import ServiceError
 from jarvis.domain.settings import Settings, SECRET_FIELDS, map_config
 from jarvis.domain.navigation import NavigationBridge
+from jarvis.domain.map_workspace import MapWorkspace
 from jarvis.domain.text import lines_for_speech
 from jarvis.application.conversation import Conversation
 from jarvis.application.ports import SessionServices
@@ -42,6 +43,7 @@ class DesktopState:
         self.counts={"memories":0,"messages":0}
         self.counts_updated=0.0
         self.navigation=NavigationBridge()
+        self.map_workspace=MapWorkspace()
 
     def notify(self,text,error=False,seconds=18):
         with self.lock:

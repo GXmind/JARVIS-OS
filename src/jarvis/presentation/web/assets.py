@@ -20,10 +20,10 @@ def read_asset(path):
     decoded=unquote(path)
     if not decoded.startswith("/") or "\\" in decoded or any(p in (".","..") for p in decoded.split("/")):
         return None
-    resource=(ASSET_ROOT/("index.html" if decoded=="/" else decoded.lstrip("/"))).resolve()
+    resource=(ASSET_ROOT/("index.html" if decoded=="/" else "map.html" if decoded=="/map" else decoded.lstrip("/"))).resolve()
     if not resource.is_relative_to(ASSET_ROOT.resolve()) or not resource.is_file():
         return None
-    if decoded=="/":
+    if decoded in ("/","/map"):
         return resource.read_text(encoding="utf-8"),"text/html; charset=utf-8",True
     if resource.suffix not in MIMES:return None
     return resource.read_bytes(),MIMES[resource.suffix],False
