@@ -7,19 +7,19 @@ import unittest
 from urllib import request,error
 from unittest.mock import patch
 
-from jarvis.paths import ROOT,initialize
+from jarvis.infrastructure.system.paths import ROOT, initialize
 initialize()
-from jarvis.config import Settings
-from jarvis.desktop import DesktopState,DesktopServer
-from jarvis.storage import Store
+from jarvis.domain.settings import Settings
+from jarvis.bootstrap import create_state, create_server
+from jarvis.infrastructure.persistence.sqlite import Store
 
 class SpaceDesktopTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(dir=ROOT/"tmp")
         self.addCleanup(self.temp.cleanup)
         self.store=Store(Path(self.temp.name)/"space.sqlite3")
-        self.state=DesktopState(Settings(API_KEY="test-local-secret"),self.store)
-        self.server=DesktopServer(self.state)
+        self.state=create_state(Settings(API_KEY="test-local-secret"),self.store)
+        self.server=create_server(self.state)
         self.server.start()
         self.addCleanup(self.server.close)
         self.opener=request.build_opener(request.ProxyHandler({}))
@@ -94,6 +94,6 @@ class SpaceDesktopTests(unittest.TestCase):
         self.assertTrue(self.state.closed.is_set())
 
     def test_empty_key_preserves_saved_secret(self):
-        with patch("jarvis.desktop.save_settings") as save:
+        with patch("jarvis.bootstrap.save_settings") as save:
             self.state.config_save({"API_KEY":"","CHAT_MODE":"mock"})
         self.assertEqual(save.call_args.args[0].API_KEY,"test-local-secret")

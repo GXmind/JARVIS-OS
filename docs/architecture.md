@@ -1,94 +1,117 @@
-# 架构说明
+# 软件架构
 
-默认入口是 Python 本机服务与 Edge 网页窗口。早期 tkinter 模块仍保留，但不是当前默认交互界面。应用运行根目录严格为 F:\Javis_os。
+默认形态仍为 Python 本机服务 + Edge 普通窗口 + Three.js 粒子场景。采用轻量分层架构及端口/适配器，使用标准库，不引入服务容器、打包器或额外运行框架。唯一运行根目录为 `F:\Javis_os`。
 
-## 模块关系
+## 目录与职责
 
-```mermaid
-flowchart LR
-    U[用户文字 / 麦克风] --> B[Edge 窗口与网页状态]
-    B <--> H[127.0.0.1 Python HTTP 服务]
-    H --> N[导航意图与地点/路线状态]
-    H --> C[兼容对话与 ASR API]
-    H --> A[WinMM / System.Speech]
-    H --> S[SQLite 历史与显式记忆]
-    B --> R[Three.js 能量体 / 城市渲染]
-    B --> M[高德 JS SDK]
-    M --> P[受限本机地图代理]
-    N --> G[城市矢量与坐标转换]
-    G --> O[OpenFreeMap / OpenMapTiles / OSM]
+```text
+main.py                         固定目录检查、缓存环境准备；调用 CLI
+src/jarvis/
+  cli.py                        参数、单实例锁、自检与启动错误提示
+  bootstrap.py                  正式运行的唯一服务装配入口
+  domain/
+    settings.py                 Settings、纯校验、公开地图配置
+    navigation.py               导航意图与 NavigationBridge 状态
+    emotion.py                  可解释情绪规则与接口
+    text.py                     播报分行规则
+    errors.py                   可安全呈现的 ServiceError
+  application/
+    ports.py                    存储、云端、音频、天气、遥测接口
+    conversation.py             对话上下文、显式记忆及模型调用流程
+    session.py                  会话、后台任务、录音/播报、设置用例
+  infrastructure/
+    config/env_file.py          字面量 .env 读取与原子保存
+    persistence/sqlite.py       历史、记忆及统计；短连接 SQLite
+    http/                       兼容云端协议、禁止重定向策略
+    audio/                      音频服务、Windows WinMM
+    maps/                       高德安全代理、城市上下文、MVT 解码
+    weather/                    天气获取与缓存
+    system/                     固定路径、日志、系统遥测
+    vendor/                     坐标转换及原始许可证
+  presentation/
+    web/server.py               loopback HTTP、令牌、协议与状态响应
+    web/security.py             地图代理 cookie/来源校验
+    web/assets.py               限定资源目录与旧 URL 兼容
+    web/assets/                 网页模块，详见下表
+    desktop/window.py           Edge 窗口、拖动、Windows 生命周期
+    legacy/                     早期 Tkinter 界面，仅保留兼容诊断
+  diagnostics/                  基础自检、Chromium 检查及 DevTools 客户端
 ```
 
-浏览器中的地图控制器调用受令牌保护的本机 API 获取配置和城市上下文，使用高德 SDK 做地点与交通查询，再把真实结果交给同一 Three.js 场景。这里没有独立打开的平面地图窗口。
+`bootstrap.create_state()` 装配会话端口，`create_server()` 装配 HTTP 服务依赖。测试可直接构造 `SessionServices` / `HttpServices`，替换云端、音频和配置写入，不需要真实凭证、麦克风或桌面。使用 `Conversation` 的云端模式时必须注入 `cloud_factory`；未装配时给出明确错误，模拟模式不访问云端。
 
-## 入口与生命周期
+## 依赖方向
 
-main.py 校验固定根目录，初始化子目录、日志、配置和应用锁。desktop.py 创建本机服务与普通窗口，并处理状态轮询、后台任务、配置、音频设备和退出。
+```mermaid
+flowchart TD
+  Main[main / cli] --> Boot[bootstrap 服务装配]
+  Boot --> P[presentation 窗口与 HTTP]
+  Boot --> A[application 用例与 ports]
+  Boot --> I[infrastructure 具体适配器]
+  P --> A
+  P --> D[domain 纯规则与状态]
+  A --> D
+  I --> D
+  I -.实现接口.-> A
+```
 
-浏览器通过 scene.js 更新状态栏与快捷键；visual.js 负责能量体、粒子与后处理；city.js 负责建筑、道路和路线的三维表现。渲染与服务使用独立状态，不用聊天模型文字代替地图成功回执。
+- domain 不导入其他层，不读文件、数据库、网络或设备。
+- application 只依赖 domain 和自身端口；不能创建 CloudAPI、Audio、Store，不能执行 SQL。
+- infrastructure 实现外部服务，不反向导入界面或装配入口。
+- 默认 presentation 只处理交互和传输。HTTP 通过注入的服务调用地图代理、城市数据和设备列表。
+- 平台窗口读取 `infrastructure.system.paths.ROOT` 是明确的路径依赖；早期 `presentation/legacy` 仍保留原有直接装配逻辑，不作为新功能入口。
+- `tests/test_architecture.py` 自动检查上述导入方向及资源目录边界。
 
-导航主流程：
+## 网页结构
 
-1. navigation.py 识别明确出行意图，确定常用起点或本次指定起点。
-2. navigation.js 使用本市 POI 搜索，核对名称、城市和坐标。places.js 区分真实景区与同名泛地名。
-3. 不够明确时进入 await_choice，中央提示左侧选择；确定后继续。
-4. 驾车、公交和步行请求分别使用独立端点数组，组装打车、自驾、公共交通、步行方案。
-5. 城市数据准备后，能量体约用 2.6 秒重组为粒子城市。
-6. 结束导航或转到无关话题后，旧请求被版本号隔离，城市反向收拢。
-
-等待、失败和完成是不同状态。旧的后端播报字幕不能盖住地图等待选择或错误说明。
-
-## 音频与字幕
-
-audio.py 与 native_audio.py 负责设备适配、录音和播放。默认 WinMM 通过排队缓冲持续播放，System.Speech 在后台生成音频。字幕时间点来自生成音频的样本位置，按行前进。
-
-语音链路为录音 → ASR → 对话或导航 → TTS。ASR 可独立配置服务和凭证；Windows TTS 无需云端 Key。后台工作避免阻塞界面；网络请求和正在生成的音频仍受各自超时与取消机制约束。
-
-## 地理数据边界
-
-- 高德：POI、交通路线与优先天气实况，使用 GCJ-02。
-- 城市背景：OpenFreeMap/OpenMapTiles/OSM 矢量，原始瓦片坐标经转换后与路线对齐。
-- city_data.py：限制范围、下载并发、缓存和返回预算。
-- vector_city.py：读取 MVT，转换建筑与交通几何。
-- eviltransform：坐标转换，原始 BSD 许可保留。
-
-数据源近似高度和显示夸张不能当作实测楼高。OpenMapTiles 的建筑字段含 render_height、render_min_height 和 hide_3d，其定义见 [官方 schema](https://openmaptiles.org/docs/schema/)。可用矢量层和覆盖受数据源限制；当前数据源的最高层级为 z14，不等于任意地点都具备完整高精建筑模型。
-
-## 存储、配置与安全边界
-
-| 目录/模块 | 用途 |
+| 目录 | 职责 |
 | --- | --- |
-| config/.env | 本机配置与明文凭证，排除出 Git |
-| data | SQLite 对话、显式长期记忆和导出 |
-| recordings | 电脑麦克风录音 |
-| cache | 合成语音、浏览器 profile、城市瓦片 |
-| logs | 本机日志和自检报告 |
-| tmp | 临时文本、锁和隔离测试数据 |
-| storage.py | 短连接 SQLite 访问 |
-| config.py | 字面量 .env 读取、校验和原子保存 |
-| logging_setup.py | 日志轮转和已知密钥过滤 |
+| app.js | 组装交互、轮询、键盘、字幕与窗口动作 |
+| core/client.js、state.js、dom.js | 带令牌的本机请求、共享运行状态、DOM 查找 |
+| ui/hud.js、weather.js、settings.js | 状态栏、天气刷新、F2 配置表单 |
+| features/navigation/controller.js | 地点选择、各方式路线、请求版本与地图状态 |
+| features/navigation/routes.js | 纯坐标、折线、公交路线及起点优先级规则 |
+| features/navigation/sdk.js | 高德 SDK 加载、超时与服务错误解释 |
+| features/navigation/places.js | POI 评分与歧义识别 |
+| features/map/controls.js | 平移、缩放、连续 360° 环绕、双指与复位 |
+| rendering/energy.js、shaders.js | 能量体、粒子、后处理与着色器 |
+| rendering/city_geometry.js | 不依赖 DOM/GPU 的建筑、道路、完整路线几何 |
+| rendering/city.js | Three.js 对象、GPU 缓冲、标签与资源更新 |
+| styles/main.css、vendor/ | 原样式、Three.js 与原始许可证 |
 
-本机界面请求使用每次运行的令牌。地图代理校验本机 Host/Origin/cookie，只转发固定地图路径；API 密钥和安全码不跟随任意重定向。JS SDK 必需的 JS Key 会到浏览器，安全密钥由本机代理处理。
+HTML 使用原生 ES Modules，不需要 Vite/Webpack。canonical 资源地址随目录组织；旧 `/scene.js`、`/navigation.js`、`/city.js` 等 URL 由本机内存兼容响应转到新模块，避免旧诊断立即失效。旧 Python 平铺模块已经迁移，工具必须改用新包路径，不增加多套转发文件。
 
-这些措施不构成公网多用户认证系统。程序没有暴露公网服务、执行任意电脑命令或控制外部 MCU 的能力。
+## 运行与导航流程
 
-## 状态与可替换接口
+1. main 准备根目录和缓存环境，cli 处理参数、日志、配置与单实例锁。
+2. bootstrap 构造适配器、会话和 HTTP 服务；窗口层启动 Edge 普通窗口。
+3. 文本或录音交给会话后台任务；录音经独立 ASR，再进入导航或对话。
+4. domain 导航规则优先使用本次明确起点，否则使用 F2 常用地址；缺少起点进入等待。
+5. 前端导航控制器核对本市真实 POI，歧义等待左侧选择，再查询打车、自驾、公交与步行。
+6. 高德返回真实路线；城市上下文由公开矢量数据构造。粒子能量体约 2.6 秒重组为城市，结束导航或无关话题后收起。
+7. HTTP 退出请求或窗口关闭触发生命周期清理；停止音频、等待后台工作，再释放设备和本机服务。
 
-Conversation 连接云端对话、历史与显式记忆；长期记忆当前是透明规则检索，不是向量数据库。EmotionProvider 的当前实现返回规则标签、原因、来源和 trained_model=false。训练目录仅为参考与待审核候选数据，没有模型权重。
+保持请求版本隔离、最多一个城市请求执行和最新视野合并。全程折线保留，初始适配起终点；地理拖动和缩放会加载新街区。GPU 缓冲复用、粒子预算与地图后处理减负仍保留，详见 [稳定性说明](map-stability.md)。此次重构不更改界面布局、配置字段、SQLite schema 或路线算法。
 
-服务商、语音后端、情绪实现和城市数据层可按模块替换，但要保留真实结果与模拟结果的区别。
+## 数据与安全
 
-## 地图更新模块
+| 路径 | 用途 |
+| --- | --- |
+| config/.env | 本机明文配置与密钥；不提交 |
+| data/ | SQLite 对话、显式记忆 |
+| recordings/ | 麦克风录音 |
+| cache/ | 音频、城市瓦片、浏览器 profile |
+| logs/ | 轮转日志、自检报告 |
+| tmp/、backups/ | 临时文件、锁、隔离测试与本机备份 |
 
-以下功能由 feature/map-update 开发，合并状态以对应 PR 和当前代码为准：
+高德 POI/路线采用 GCJ-02；OpenFreeMap/OpenMapTiles/OSM 城市几何经坐标转换对齐。数据最高层级与覆盖有限，未知楼宇不使用随机建筑填充；高度强调与源高度分离，不代表实测高度。保留地图归属及第三方许可。
 
-- 建筑内环归属、底高和 hide_3d 处理，局部过滤与去重。
-- 默认更近的街区显示范围和独立楼高强调。
-- map_controls.js 统一处理连续水平环绕、俯仰、平移、缩放、双指和复位。
-- 主路、支路、步道与有限道路文字层；顶点地理坐标保持来源，不通过挪动地图“贴合”路线。
+本机 HTTP 仅绑定 127.0.0.1。请求校验每次运行的令牌、Host/Origin；地图代理仅转发受限路径并禁止重定向泄漏凭证。JS Key 用于浏览器 SDK，安全密钥留在 Python 代理。资源访问限制在 assets 目录。不是公网多用户服务。
 
-功能说明与验证范围见 docs/map-update.md、docs/map-stability.md 和当前代码。
+对话、ASR、TTS 是不同能力；独立 ASR 地址必须使用独立密钥。Windows 播报仍由后台 System.Speech 生成音频、WinMM 排队播放，字幕按样本位置分行。长期记忆为显式保存和透明检索；情绪为可解释规则，`trained_model=false`，没有已训练情感模型。
 
-该功能分支后续已补充默认完整起终点适配、完整折线保留、地理视野拖拽和缩放、按区域选择全程路网层级，以及避免覆盖侧栏的中央绘制范围。实际交互以当前版本代码及地图说明为准。
+## 验证与迁移
 
-该功能分支也增加了地图请求合并、GPU 缓冲复用、地图模式后处理减负，以及避免界面轮询延迟误关窗口的生命周期修订；具体证据与边界见其稳定性说明。
+见 [构建说明](../BUILDING.md) 的完整命令和 [协作说明](../CONTRIBUTING.md) 的功能落点。新增接口需要无网络/无设备的替身测试；跨层导入由架构测试约束。结构变更还需前端几何、真实浏览器正反向动画及地图压力检查。真实服务联调与合成 SDK 测试分开记录。
+
+源代码迁移前在根目录 backups 中留存本机备份。用户 .env、数据库、录音及缓存不迁移、不改名；旧启动命令、快捷键和 HTTP API 保持兼容。直接导入旧 Python 模块的个人工具需要按本页路径更新。

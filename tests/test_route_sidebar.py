@@ -2,13 +2,13 @@ from dataclasses import replace
 from pathlib import Path
 import tempfile,unittest
 from unittest.mock import patch
-from jarvis.paths import ROOT,initialize
+from jarvis.infrastructure.system.paths import ROOT, initialize
 initialize()
-from jarvis.navigation import NavigationBridge,parse_navigation
-from jarvis.config import Settings
-from jarvis.desktop import DesktopState
-from jarvis.storage import Store
-from jarvis.api import CloudAPI
+from jarvis.domain.navigation import NavigationBridge, parse_navigation
+from jarvis.domain.settings import Settings
+from jarvis.bootstrap import create_state
+from jarvis.infrastructure.persistence.sqlite import Store
+from jarvis.infrastructure.http.openai_compatible import CloudAPI
 
 class RouteSidebarTests(unittest.TestCase):
     def test_exact_reported_taxi_phrase(self):
@@ -38,7 +38,7 @@ class RouteSidebarTests(unittest.TestCase):
     def test_exact_bug_phrase_bypasses_chat_model(self):
         with tempfile.TemporaryDirectory(dir=ROOT/"tmp") as folder:
             cfg=Settings(API_BASE_URL="https://api.deepseek.com",API_KEY="unit-test",API_MODEL="deepseek-flash",CHAT_MODE="api",AMAP_DEFAULT_ORIGIN="F2 地址")
-            state=DesktopState(cfg,Store(Path(folder)/"test.sqlite3"))
+            state=create_state(cfg,Store(Path(folder)/"test.sqlite3"))
             with patch.object(CloudAPI,"chat",side_effect=AssertionError("Navigation must not go to chat")),patch.object(state,"_speak_answer"):
                 state._reply("帮我规划从苏州工业园区站到虎丘景区的路线，打车前往",cfg)
             self.assertEqual(state.navigation.snapshot()["destination"],"虎丘景区")
@@ -46,9 +46,9 @@ class RouteSidebarTests(unittest.TestCase):
 
     def test_saving_unrelated_setting_does_not_close_active_route(self):
         with tempfile.TemporaryDirectory(dir=ROOT/"tmp") as folder:
-            state=DesktopState(Settings(AMAP_DEFAULT_ORIGIN="F2 地址"),Store(Path(folder)/"test.sqlite3"))
+            state=create_state(Settings(AMAP_DEFAULT_ORIGIN="F2 地址"),Store(Path(folder)/"test.sqlite3"))
             state.navigation.accept("我要去虎丘景区","苏州","F2 地址")
             before=state.navigation.snapshot()
-            with patch("jarvis.desktop.save_settings"):
+            with patch("jarvis.bootstrap.save_settings"):
                 state.config_save({"WEATHER_CITY":"苏州虎丘区"})
             self.assertEqual(state.navigation.snapshot(),before)

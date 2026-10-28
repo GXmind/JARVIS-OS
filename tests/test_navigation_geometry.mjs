@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {coordinates,extractRoute,screenPath,pointAt,routeParticles} from "../src/jarvis/space_ui/navigation.js";
+import {coordinates,extractRoute,screenPath,pointAt,routeParticles} from "../src/jarvis/presentation/web/assets/features/navigation/controller.js";
 assert.deepEqual(coordinates({lng:120.5,lat:31.3}),[120.5,31.3]);
 assert.deepEqual(coordinates({getLng:()=>120.6,getLat:()=>31.4}),[120.6,31.4]);
 assert.equal(coordinates({lng:null,lat:null}),null);

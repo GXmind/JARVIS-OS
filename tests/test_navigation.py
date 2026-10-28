@@ -5,13 +5,17 @@ import tempfile
 import unittest
 from urllib import request,error,parse
 from unittest.mock import patch
-from jarvis.paths import ROOT,initialize
+from jarvis.infrastructure.system.paths import ROOT, initialize
 initialize()
-from jarvis.config import Settings
-from jarvis.desktop import DesktopState,DesktopServer
-from jarvis.navigation import map_config,parse_navigation,NavigationBridge,build_proxy_url,proxy_authorized,normalize_proxy_response
-from jarvis.storage import Store
-from jarvis.api import ServiceError,CloudAPI
+from jarvis.domain.settings import Settings
+from jarvis.bootstrap import create_state, create_server
+from jarvis.domain.settings import map_config
+from jarvis.domain.navigation import parse_navigation, NavigationBridge
+from jarvis.infrastructure.maps.amap import build_proxy_url, normalize_proxy_response
+from jarvis.presentation.web.security import proxy_authorized
+from jarvis.infrastructure.persistence.sqlite import Store
+from jarvis.domain.errors import ServiceError
+from jarvis.infrastructure.http.openai_compatible import CloudAPI
 
 class NavigationTests(unittest.TestCase):
     def test_missing_credentials_is_not_a_mock_map(self):
@@ -144,8 +148,8 @@ class MapHTTPTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(dir=ROOT/"tmp")
         self.addCleanup(self.temp.cleanup)
         settings=Settings(API_KEY="chat-private",AMAP_JS_KEY="js-public",AMAP_SECURITY_JSCODE="map-private")
-        self.state=DesktopState(settings,Store(Path(self.temp.name)/"maps.sqlite3"))
-        self.server=DesktopServer(self.state)
+        self.state=create_state(settings,Store(Path(self.temp.name)/"maps.sqlite3"))
+        self.server=create_server(self.state)
         self.server.start()
         self.addCleanup(self.server.close)
         self.opener=request.build_opener(request.ProxyHandler({}))
@@ -197,7 +201,7 @@ class MapHTTPTests(unittest.TestCase):
         self.assertIn("Path=/_AMapService",cookie)
 
     def test_proxy_without_cookie_never_contacts_provider(self):
-        with patch("jarvis.desktop.fetch_proxy") as upstream:
+        with patch("jarvis.bootstrap.fetch_proxy") as upstream:
             with self.assertRaises(error.HTTPError) as caught:
                 self.get("/_AMapService/v3/direction/driving")
             self.assertEqual(caught.exception.code,403)
@@ -205,21 +209,21 @@ class MapHTTPTests(unittest.TestCase):
             upstream.assert_not_called()
 
     def test_authenticated_sdk_proxy_wiring(self):
-        with patch("jarvis.desktop.fetch_proxy",return_value=(b'{"status":"1"}',"application/json")) as upstream:
+        with patch("jarvis.bootstrap.fetch_proxy",return_value=(b'{"status":"1"}',"application/json")) as upstream:
             with self.get("/_AMapService/v3/direction/driving?origin=120,31",
                           {"Cookie":"jarvis_map_gate="+self.server.token}) as response:
                 self.assertEqual(json.load(response)["status"],"1")
             self.assertEqual(upstream.call_args.args[0],"/_AMapService/v3/direction/driving")
 
     def test_empty_settings_preserve_map_credentials(self):
-        with patch("jarvis.desktop.save_settings") as save:
+        with patch("jarvis.bootstrap.save_settings") as save:
             self.state.config_save({"AMAP_JS_KEY":"","AMAP_SECURITY_JSCODE":""})
         self.assertEqual(save.call_args.args[0].AMAP_JS_KEY,"js-public")
         self.assertEqual(save.call_args.args[0].AMAP_SECURITY_JSCODE,"map-private")
 
     def test_saving_common_origin_resumes_conversation_request(self):
         self.state.navigation.accept("我要去金鸡湖","苏州")
-        with patch("jarvis.desktop.save_settings") as save:
+        with patch("jarvis.bootstrap.save_settings") as save:
             self.state.config_save({"AMAP_DEFAULT_ORIGIN":"苏州站"})
         self.assertEqual(save.call_args.args[0].AMAP_DEFAULT_ORIGIN,"苏州站")
         event=self.state.navigation.snapshot()

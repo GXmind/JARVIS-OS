@@ -1,6 +1,6 @@
 # 地图卡顿与退出稳定性修订
 
-本修订只在 feature/map-update。主分支运行代码不变。
+地图更新已通过 PR #1 合入 main；下述稳定性行为保留在分层后的实现中。
 
 ## 已修正路径
 
@@ -15,7 +15,7 @@
 
 ## 可复现压力检查
 
-在安装于 F:\Javis_os 的功能分支运行：
+在安装于 F:\Javis_os 的当前版本运行：
 
 ```powershell
 .\.venv\Scripts\python.exe -B scripts\stress_map.py
