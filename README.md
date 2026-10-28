@@ -102,7 +102,7 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 
     .\.venv\Scripts\python.exe -B main.py --self-check --audio --tts
 
-麦克风测试会实际录音；播放调用成功不能代替人耳确认音质。常规浏览器自检使用模拟 SDK 和独立数据库，不使用真实地图凭证；真实服务联调需要使用者自行配置。发布前本机 105 项 Python 单元测试和实际 WebGL 正反向动画检查已通过。
+麦克风测试会实际录音；播放调用成功不能代替人耳确认音质。常规浏览器自检使用模拟 SDK 和独立数据库，不使用真实地图凭证；真实服务联调需要使用者自行配置。发布前本机 116 项 Python 单元测试和实际 WebGL 正反向动画检查已通过。
 
 ## 项目结构
 
@@ -120,6 +120,14 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 
 项目沿用仓库现有的 [Apache License 2.0](LICENSE)。Three.js 使用 MIT，eviltransform 使用 BSD，原始许可随相应文件附带。地图数据及归属说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
+## feature/map-update
+
+本分支改善近景几何、建筑内院和底高，增加 ×1–×32 楼高强调与完整水平环绕、俯仰、平移、缩放及复位。详见 [地图更新说明](docs/map-update.md)。
+
+全程与浏览修订：默认显示完整起终点和周边路网；左键拖动移动地理视野，右键/Shift 拖动环绕，滚轮放大加载街区。“查看全程”恢复整段路线，地图不会覆盖两侧状态栏。
+
+渲染卡顿与退出的修订及可复现压力检查见 [稳定性说明](docs/map-stability.md)。
+
 ## 开发与维护
 
 | 说明 | 内容 |
@@ -129,4 +137,4 @@ Windows 上的中文个人助手原型：Python 后端配合 Three.js 网页界�
 | [API 申请与配置](docs/API_SETUP.md) | 高德、对话、识别和播报的申请与配置 |
 | [架构说明](docs/architecture.md) | 模块、状态流程、存储与数据边界 |
 
-地图精度、楼高与全向操作的开发实现位于 [feature/map-update](https://github.com/GXmind/JARVIS-OS/tree/feature/map-update)。main 保持当前运行基线，本次只更新协作文档，未合并该功能分支。
+地图精度、楼高与全向操作的开发实现位于 [feature/map-update](https://github.com/GXmind/JARVIS-OS/tree/feature/map-update)。功能开发与合并记录见对应 PR，当前可用能力以所在分支代码为准。

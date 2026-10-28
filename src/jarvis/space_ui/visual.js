@@ -162,7 +162,7 @@ export function createVisual(canvas,state,metrics){
  metrics.engine="Three.js r"+THREE.REVISION+" / WebGL2";metrics.particles=18300;
  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,1,.1,60);
  camera.position.set(0,.05,6.8);camera.lookAt(0,0,0);
- const particleCity=createParticleCity(THREE,scene);
+ const particleCity=createParticleCity(THREE,scene,camera);
  const uniforms={uTime:{value:0},uPhase:{value:0},uLevel:{value:0},uDpr:{value:1},uMapMix:{value:0}};
  const ribbons=new THREE.Group();scene.add(ribbons);const geometry=makeRibbonGeometry();
  for(let i=0;i<6;i++){
@@ -226,11 +226,17 @@ export function createVisual(canvas,state,metrics){
   for(const orbit of orbits)orbit.visible=mapMix<.95;
   uniforms.uTime.value=elapsed;uniforms.uPhase.value=phase;uniforms.uLevel.value=level;ribbons.rotation.z=Math.sin(elapsed*.08)*.055;
   for(let i=0;i<orbits.length;i++)orbits[i].rotation.z+=dt*(i%2?.016:-.012);
-  renderer.info.reset();renderer.setRenderTarget(sceneTarget);renderer.render(scene,camera);renderPost(threshold,ping);
-  for(let iteration=0;iteration<2;iteration++){
+  renderer.info.reset();renderer.setRenderTarget(sceneTarget);renderer.render(scene,camera);
+  if(mapMix<.995){
+   renderPost(threshold,ping);
+   for(let iteration=0;iteration<2;iteration++){
    blur.uniforms.uSource.value=ping.texture;blur.uniforms.uDirection.value.set((1.1+iteration)/ping.width,0);renderPost(blur,pong);
    blur.uniforms.uSource.value=pong.texture;blur.uniforms.uDirection.value.set(0,(1.1+iteration)/ping.height);renderPost(blur,ping);
   }
+  }
+  metrics.postPasses=mapMix<.995?6:1;
+  metrics.gpuGeometries=renderer.info.memory.geometries;metrics.gpuTextures=renderer.info.memory.textures;
+  metrics.gpuPrograms=renderer.info.programs?.length||0;
   combine.uniforms.uBloomGain.value=.65*(1-THREE.MathUtils.smoothstep(mapMix,0,.45));
   combine.uniforms.uExposure.value=(1.15+phase*.04+level*.035)*(1-mapMix)+.95*mapMix;renderPost(combine,null);
   const cost=performance.now()-begin;
@@ -242,6 +248,6 @@ export function createVisual(canvas,state,metrics){
  }
  resize();addEventListener("resize",resize);requestAnimationFrame(draw);
  canvas.addEventListener("webglcontextlost",event=>{event.preventDefault();metrics.ready=false;window.__renderError="WebGL context lost";});
- return {setLowQuality(low){budget=1000/(low?20:30);dpr=low?1:Math.min(devicePixelRatio||1,1.25);resize();},
+ return {setLowQuality(low){state.cityParticleBudget=low?16000:36000;budget=1000/(low?20:30);dpr=low?1:Math.min(devicePixelRatio||1,1.25);resize();},
   stop(){running=false;removeEventListener("resize",resize);renderer.dispose();sceneTarget.dispose();ping.dispose();pong.dispose();}};
 }

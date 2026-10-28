@@ -5,7 +5,7 @@ class Element{
  replaceChildren(...nodes){this.children=nodes;} append(...nodes){this.children.push(...nodes);}
 }
 const elements=new Map();
-globalThis.document={body:new Element(),querySelectorAll:()=>[],createElement:()=>new Element(),getElementById:id=>{
+globalThis.document={body:new Element(),querySelectorAll:()=>[],createTextNode:text=>text,createElement:()=>new Element(),getElementById:id=>{
  if(!elements.has(id))elements.set(id,new Element());return elements.get(id);
 }};
 const row=(id,location=[120.62,31.32])=>({id,name:"同名公园",cityname:"苏州市",type:"风景名胜;公园",location});
@@ -30,3 +30,22 @@ await assert.rejects(cancelled,/退出导航/);
 assert.equal(c.state.mapStage,"closed");assert.equal(c.routeBusy,false);
 assert.equal(c.controls.children.length,0);
 console.log("Ambiguous-place prompt, continuation and cancellation lifecycle passed.");
+
+const browse=controller([]),responses=[];
+browse.state.mapReady=true;browse.state.cityView="browse";browse.state.cityFocus=[120.6,31.31];
+browse.api=()=>new Promise(resolve=>responses.push(resolve));
+const route=[[120.6,31.31],[120.7,31.32]];
+const first=browse.showScene(route,{},1);
+browse.state.cityFocus=[120.65,31.315];
+const discarded=browse.showScene(route,{},1);
+browse.state.cityFocus=[120.7,31.32];
+const latest=browse.showScene(route,{},1);
+assert.equal(responses.length,1,"Only one city request may be in flight");
+responses[0]({buildings:[],roads:[],marker:"old-area"});await first;await discarded;
+await Promise.resolve();
+assert.equal(responses.length,2,"Intermediate queued views must be coalesced, not all downloaded");
+responses[1]({buildings:[],roads:[],marker:"new-area"});await latest;
+assert.equal(browse.state.cityScene.context.marker,"new-area");
+assert.deepEqual(browse.state.cityScene.focus,[120.7,31.32]);
+assert.equal(browse.contextLoading,false);
+console.log("Map loads are serialized, intermediate views coalesce and old responses cannot restore old areas.");

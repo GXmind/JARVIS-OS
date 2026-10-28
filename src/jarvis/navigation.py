@@ -13,6 +13,7 @@ def map_config(settings):
     secret=settings.AMAP_SECURITY_JSCODE.strip()
     return {"configured":bool(key and secret),"has_key":bool(key),"has_security_code":bool(secret),
             "key":key if key and secret else "","city":settings.AMAP_CITY or "苏州",
+            "view_meters":float(settings.MAP_VIEW_METERS),"height_scale":float(settings.MAP_HEIGHT_SCALE),
             "provider":"AMap","service_path":"/_AMapService","default_origin":settings.AMAP_DEFAULT_ORIGIN,"weather_city":settings.WEATHER_CITY,"weather_adcode":settings.WEATHER_ADCODE,
             "message":"" if key and secret else "请在 F2 设置中填写高德 Web端（JS API）Key 和配套安全密钥。"}
 

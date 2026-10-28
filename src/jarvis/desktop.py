@@ -63,6 +63,7 @@ class DesktopState:
         self.last_record=None
         self.revision=0
         self.window_handle=None
+        self.worker_threads=set()
         self.weather=Weather(settings.WEATHER_CITY)
         self.telemetry=Telemetry()
         self.counts={"memories":0,"messages":0}
@@ -123,7 +124,17 @@ class DesktopState:
                     self.activity="idle"
                     self.kind=""
                     self.dialogue_until=time.monotonic()+8
-        threading.Thread(target=worker,daemon=True,name="jarvis-space-"+kind).start()
+                    self.worker_threads.discard(threading.current_thread())
+        thread=threading.Thread(target=worker,daemon=True,name="jarvis-space-"+kind)
+        with self.lock:self.worker_threads.add(thread)
+        thread.start()
+
+    def wait_workers(self,seconds=2.0):
+        deadline=time.monotonic()+seconds
+        with self.lock:threads=list(self.worker_threads)
+        for thread in threads:
+            if thread is not threading.current_thread():
+                thread.join(max(0,deadline-time.monotonic()))
 
     def _reply(self,text,settings):
         navigation=self.navigation.accept(text,settings.AMAP_CITY,settings.AMAP_DEFAULT_ORIGIN)
@@ -259,7 +270,11 @@ class DesktopServer:
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*args):
                 pass
-            def respond(self,status,body,mime="application/json; charset=utf-8"):
+            def respond(self,*args,**kwargs):
+                try:return self._respond(*args,**kwargs)
+                except (ConnectionError,OSError):
+                    self.close_connection=True
+            def _respond(self,status,body,mime="application/json; charset=utf-8"):
                 if isinstance(body,(dict,list)):
                     body=json.dumps(body,ensure_ascii=False).encode("utf-8")
                 elif isinstance(body,str):
@@ -336,6 +351,7 @@ class DesktopServer:
                        "/visual.js":("visual.js","text/javascript; charset=utf-8"),
                        "/navigation.js":("navigation.js","text/javascript; charset=utf-8"),
                        "/city.js":("city.js","text/javascript; charset=utf-8"),
+                       "/map_controls.js":("map_controls.js","text/javascript; charset=utf-8"),
                        "/places.js":("places.js","text/javascript; charset=utf-8")}
                 if path.startswith("/vendor/"):
                     vendor=(UI/path.lstrip("/")).resolve()
@@ -380,7 +396,7 @@ class DesktopServer:
                     elif action=="/api/stop":
                         outer.state.audio.stop()
                     elif action=="/api/city/context":
-                        result=city_context(values.get("path",[]))
+                        result=city_context(values.get("path",[]),overview=values.get("overview") is True)
                         self.respond(200,result);return
                     elif action=="/api/navigation/result":
                         outer.state.navigation_result(values)
@@ -413,6 +429,8 @@ class DesktopServer:
 
     def close(self):
         self.state.closed.set()
+        self.state.audio.stop()
+        self.state.wait_workers(2.0)
         self.state.audio.close()
         self.http.shutdown()
         self.http.server_close()
@@ -487,9 +505,15 @@ def run(settings,config_error=None):
                 state.window_handle=find_window()
                 if state.window_handle:
                     style_window(state.window_handle)
-            if state.connected and time.monotonic()-state.last_seen>8:
-                break
-            if not state.connected and time.monotonic()-launched>30:
+            if state.window_handle:
+                import ctypes
+                if not ctypes.windll.user32.IsWindow(state.window_handle):
+                    replacement=find_window()
+                    if replacement:state.window_handle=replacement
+                    else:
+                        LOG.info("space_exit_reason window_closed")
+                        break
+            if not state.connected and time.monotonic()-launched>60:
                 raise ServiceError("星空窗口未能连接，请检查已安装的 Edge。")
         return 0
     finally:

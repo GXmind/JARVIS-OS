@@ -1,3 +1,4 @@
+import {resetMapView,DEFAULT_EXTENT,DEFAULT_HEIGHT_SCALE,rebaseMapView} from "./map_controls.js";
 import {rankPlaces,confidentPlace,groundDistance} from "./places.js";
 /* Real AMap JS API integration. No fabricated basemap or fallback routes. */
 export function coordinates(value){
@@ -123,8 +124,20 @@ export class NavigationController{
   this.stage=document.getElementById("mapStage");
   this.controls=document.getElementById("travelOptions");
   this.panel=document.getElementById("travelPanel");
-  this.resolved=null;this.pendingPlaceReject=null;
+  this.resolved=null;this.pendingPlaceReject=null;this.sceneRequestId=0;this.viewTimer=null;this.contextLoading=false;this.pendingContext=null;
   for(const button of document.querySelectorAll("[data-city-view]"))button.onclick=()=>this.setView(button.dataset.cityView);
+  const height=document.getElementById("cityHeight");
+  if(height)height.oninput=()=>{
+   this.state.cityHeightScale=Number(height.value);
+   document.getElementById("cityHeightValue").textContent="×"+height.value;
+  };
+  const reset=document.getElementById("cityReset");
+  if(reset)reset.onclick=()=>this.setView("overview");
+  const drag=document.getElementById("cityDragMode");
+  if(drag)drag.onclick=()=>{
+   this.state.cityDragMode=this.state.cityDragMode==="orbit"?"pan":"orbit";
+   drag.textContent=this.state.cityDragMode==="orbit"?"拖动：环绕":"拖动：移动";
+  };
  }
  status(text,error=false){this.state.mapStatus=text;this.message(text,error,error?14:5);}
  progress(stage,text,error=false){
@@ -151,9 +164,9 @@ export class NavigationController{
   this.progress("preparing","正在准备通行方案…");
   const version=++this.requestVersion;this.command=command;
   if(this.pendingPlaceReject){this.pendingPlaceReject(new Error("已切换请求"));this.pendingPlaceReject=null;}
-  this.state.cityView="start";this.state.cityZoom=1;this.resolved=null;
-  for(const button of document.querySelectorAll("[data-city-view]"))button.classList.toggle("selected",button.dataset.cityView==="start");
-  document.getElementById("cityViewLabel").textContent="起点街区 · 三维城市";
+  this.state.cityView="overview";this.state.cityFocus=null;resetMapView(this.state);this.resolved=null;
+  for(const button of document.querySelectorAll("[data-city-view]"))button.classList.toggle("selected",button.dataset.cityView==="overview");
+  document.getElementById("cityViewLabel").textContent="全程路线 · 含起点与终点";
   document.getElementById("resolvedOrigin").textContent="";
   document.getElementById("resolvedDestination").textContent="";
   this.state.mapReady=false;this.state.mapSummary="";this.options=[];this.controls.replaceChildren();
@@ -162,6 +175,11 @@ export class NavigationController{
    this.config=await this.api("map/config");
    if(version!==this.requestVersion)return;
    command=resolveRouteCommand(command,this.config);this.command=command;
+   this.state.cityExtent=Number(this.config.view_meters)||DEFAULT_EXTENT;
+   this.state.cityHeightScale=Number(this.config.height_scale)||DEFAULT_HEIGHT_SCALE;
+   const height=document.getElementById("cityHeight");
+   if(height)height.value=String(this.state.cityHeightScale);
+   const value=document.getElementById("cityHeightValue");if(value)value.textContent="×"+this.state.cityHeightScale;
    document.getElementById("travelOriginSource").textContent=command.origin_source==="saved"?"起点 · F2 常用地址":"起点 · 本次指定";
    document.getElementById("travelOrigin").textContent=command.origin||this.config.default_origin||"尚未填写";
    document.getElementById("travelDestination").textContent=command.destination||"等待目的地";
@@ -325,10 +343,12 @@ export class NavigationController{
   if(version!==this.requestVersion||!this.isOpen)return;
   this.path=path;
   const view=this.state.cityView||"start";
-  const focus=view==="end"?(this.resolved?.destination.location||path.at(-1)):(this.resolved?.origin.location||path[0]);
+  const sceneId=++this.sceneRequestId;
+  const extent=view==="browse"?(this.state.cityBrowseExtent||this.state.cityExtent||DEFAULT_EXTENT):(this.state.cityExtent||DEFAULT_EXTENT);
+  const focus=view==="browse"?this.state.cityFocus:view==="end"?(this.resolved?.destination.location||path.at(-1)):(this.resolved?.origin.location||path[0]);
   // Commit a complete scene atomically. View/route changes retain the last city while loading.
-  if(context.buildings?.length){
-   this.state.cityScene={path,context,view,focus};this.state.cityRevision=(this.state.cityRevision||0)+1;
+  if(this.state.mapReady||context.buildings?.length){
+   this.state.cityScene={path,context,view,focus,extent,originName:this.resolved?.origin.name,destinationName:this.resolved?.destination.name};this.state.cityRevision=(this.state.cityRevision||0)+1;
    this.state.mapReady=true;
   }
   this.stage.hidden=false;document.body.classList.add("map-active");
@@ -336,15 +356,17 @@ export class NavigationController{
   document.getElementById("cityDataNote").textContent="高德路线 · 正在加载真实周边楼宇";
   try{
    const contextPath=view==="overview"?path.filter((_,i)=>i%Math.max(1,Math.ceil(path.length/1500))===0):
-     [[focus[0]-.014,focus[1]-.012],[focus[0]+.014,focus[1]+.012]];
-   const data=await this.api("city/context",{path:contextPath});
-   if(version!==this.requestVersion||!this.isOpen||path!==this.path||view!==this.state.cityView)return;
+     [[focus[0]-extent*.8/(111320*Math.cos(focus[1]*Math.PI/180)),focus[1]-extent*.65/111320],
+      [focus[0]+extent*.8/(111320*Math.cos(focus[1]*Math.PI/180)),focus[1]+extent*.65/111320]];
+   const data=await this.requestCityContext({path:contextPath,overview:view==="overview"||extent>6000},sceneId);
+   if(!data)return;
+   if(version!==this.requestVersion||!this.isOpen||path!==this.path||view!==this.state.cityView||sceneId!==this.sceneRequestId)return;
    this.currentContext=data;
-   this.state.cityScene={path,context:data,view,focus};
+   this.state.cityScene={path,context:data,view,focus,extent,originName:this.resolved?.origin.name,destinationName:this.resolved?.destination.name};
    this.state.cityRevision=(this.state.cityRevision||0)+1;this.state.mapReady=true;
    this.progress("ready","路线已就绪，点击左侧方式切换");
    const note=document.getElementById("cityDataNote");
-   note.textContent=data.buildings?.length?"局部城市 · 楼高示意 · ":"楼宇数据暂不可用 · ";
+   note.textContent=(view==="overview"||extent>6000)?"全程路网 · 放大加载三维街区 · ":data.buildings?.length?"街区矢量 · 楼高视觉强调 · "+(data.coverage==="partial"?"部分瓦片缺失 · ":""):"楼宇数据暂不可用 · ";
    const credits=[["高德","https://www.amap.com/"],["OpenFreeMap","https://openfreemap.org/"],
     ["OpenMapTiles","https://openmaptiles.org/"],["© OpenStreetMap contributors","https://www.openstreetmap.org/copyright"]];
    for(const [label,url]of credits){
@@ -352,8 +374,8 @@ export class NavigationController{
     note.append(link,document.createTextNode(" "));
    }
   }catch(error){
-   if(version===this.requestVersion&&this.isOpen&&path===this.path&&view===this.state.cityView){
-    this.state.cityScene={path,context:{},view,focus};
+   if(version===this.requestVersion&&this.isOpen&&path===this.path&&view===this.state.cityView&&sceneId===this.sceneRequestId){
+    this.state.cityScene={path,context:{},view,focus,extent,originName:this.resolved?.origin.name,destinationName:this.resolved?.destination.name};
     this.state.cityRevision=(this.state.cityRevision||0)+1;this.state.mapReady=true;
     this.progress("ready","路线已就绪，周边楼宇暂不可用");
     document.getElementById("cityDataNote").textContent="高德真实路线 · 周边城市数据暂不可用";
@@ -362,13 +384,48 @@ export class NavigationController{
  }
  setView(view){
   if(!["start","end","overview"].includes(view))return;
-  this.state.cityView=view;this.state.cityZoom=1;
+  clearTimeout(this.viewTimer);this.state.cityView=view;this.state.cityFocus=null;resetMapView(this.state);
   for(const button of document.querySelectorAll("[data-city-view]"))button.classList.toggle("selected",button.dataset.cityView===view);
-  document.getElementById("cityViewLabel").textContent=view==="overview"?"全程线路总览":view==="end"?"终点街区 · 三维城市":"起点街区 · 三维城市";
+  document.getElementById("cityViewLabel").textContent=view==="overview"?"全程路线 · 含起点与终点":view==="end"?"终点街区 · 三维城市":"起点街区 · 三维城市";
   if(this.isOpen&&this.path.length)this.showScene(this.path,{},this.requestVersion);
+ }
+ requestCityContext(body,sceneId){
+  return new Promise((resolve,reject)=>{
+   if(this.pendingContext)this.pendingContext.resolve(null);
+   this.pendingContext={body,sceneId,resolve,reject};
+   void this.drainCityContext();
+  });
+ }
+ async drainCityContext(){
+  if(this.contextLoading)return;
+  this.contextLoading=true;
+  try{
+   while(this.pendingContext){
+    const task=this.pendingContext;this.pendingContext=null;
+    if(!this.isOpen||task.sceneId!==this.sceneRequestId){task.resolve(null);continue;}
+    try{task.resolve(await this.api("city/context",task.body));}
+    catch(error){task.reject(error);}
+   }
+  }finally{this.contextLoading=false;}
+ }
+ scheduleViewCommit(){
+  clearTimeout(this.viewTimer);this.viewTimer=setTimeout(()=>this.commitView(),350);
+ }
+ commitView(){
+  clearTimeout(this.viewTimer);
+  if(!this.isOpen||!this.path.length||!this.state.cityFrame)return;
+  const next=rebaseMapView(this.state,this.state.cityFrame);
+  this.state.cityFocus=next.origin;this.state.cityBrowseExtent=next.extent;this.state.cityView="browse";
+  this.state.cityFrame={origin:next.origin,extent:next.extent};
+  this.state.cityPanX=0;this.state.cityPanY=0;this.state.cityZoom=1;
+  for(const button of document.querySelectorAll("[data-city-view]"))button.classList.remove("selected");
+  document.getElementById("cityViewLabel").textContent="沿途浏览 · 拖动继续查看";
+  this.showScene(this.path,this.currentContext||{},this.requestVersion);
  }
  close(){
   if(this.pendingPlaceReject){this.pendingPlaceReject(new Error("已退出导航"));this.pendingPlaceReject=null;}
+  clearTimeout(this.viewTimer);this.sceneRequestId++;
+  if(this.pendingContext){this.pendingContext.resolve(null);this.pendingContext=null;}
   this.isOpen=false;this.state.mapOpen=false;this.state.mapReady=false;
   this.state.mapStage="closed";this.state.mapStatus="";
   this.state.mapSummary="";this.state.mapTrip="";this.options=[];this.controls.replaceChildren();

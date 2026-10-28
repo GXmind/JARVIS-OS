@@ -177,6 +177,7 @@ const fieldLabels={
  ASR_MODE:"语音识别",ASR_BASE_URL:"语音识别 API 地址（独立服务）",ASR_API_KEY:"语音识别密钥（独立服务）",ASR_MODEL:"语音识别模型（录音转文字）",TTS_MODE:"语音播报",TTS_MODEL:"播报模型",TTS_VOICE:"音色",
  INPUT_DEVICE:"输入设备编号（空为系统默认）",OUTPUT_DEVICE:"输出设备编号（空为系统默认）",
  SAMPLE_RATE:"录音采样率",MAX_RECORD_SECONDS:"最长录音秒数",REQUEST_TIMEOUT:"请求超时秒数",AUTO_SPEAK:"自动播报",WEATHER_CITY:"天气城市 / 区县",WEATHER_ADCODE:"天气行政区编码（虎丘区 320505）",
+ MAP_VIEW_METERS:"地图街区范围（600–5000 米，下次导航生效）",MAP_HEIGHT_SCALE:"楼高视觉倍率（1–32，下次导航生效）",
  AMAP_JS_KEY:"高德 Web端（JS API）Key",AMAP_SECURITY_JSCODE:"高德安全密钥（securityJsCode）",AMAP_CITY:"地图默认城市",AMAP_DEFAULT_ORIGIN:"常用出发地（请填写具体地址或地点）"};
 const options={CHAT_MODE:[["mock","模拟"],["api","云端 API"]],ASR_MODE:[["off","关闭"],["api","云端 API"]],
  TTS_MODE:[["windows","Windows 系统"],["api","云端 API"],["off","关闭"]],AUTO_SPEAK:[["false","关闭"],["true","开启"]]};
@@ -254,14 +255,6 @@ canvas.onpointerdown=event=>{
  if(Math.hypot(event.clientX-CX,event.clientY-CY)<R*.95)api("record",{}).catch(error=>message(error.message,true));
 };
 window.__sceneMetrics=metrics;
-let cityDrag=null;
-canvas.addEventListener("pointerdown",event=>{
- if(!state.mapReady)return;
- cityDrag={x:event.clientX,yaw:state.cityYaw||0};canvas.setPointerCapture(event.pointerId);
-});
-canvas.addEventListener("pointermove",event=>{if(cityDrag)state.cityYaw=cityDrag.yaw+(event.clientX-cityDrag.x)*.005;});
-canvas.addEventListener("pointerup",()=>{cityDrag=null;});
-canvas.addEventListener("pointercancel",()=>{cityDrag=null;});
-canvas.addEventListener("wheel",event=>{
- if(state.mapReady){event.preventDefault();state.cityZoom=Math.max(.6,Math.min(2.2,(state.cityZoom||1)*Math.exp(-event.deltaY*.001)));}
-},{passive:false});
+import("/map_controls.js").then(({bindMapControls})=>{
+ bindMapControls(canvas,state,{onViewEnd:()=>navigation?.commitView(),onZoom:()=>navigation?.scheduleViewCommit()});
+}).catch(error=>message("地图手势加载失败："+error.message,true));
