@@ -1,3 +1,5 @@
+import {createCenter} from "./center.js";
+import {visualActivity} from "./activity.js";
 import {createAssembly} from "./assembly.js";
 import {transferFrame} from "./transfer.js";
 import {createParticleCity} from "./city.js";
@@ -37,8 +39,8 @@ export function createVisual(canvas,state,metrics){
  metrics.engine="Three.js r"+THREE.REVISION+" / WebGL2";metrics.particles=18300;
  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,1,.1,60);
  camera.position.set(0,.05,6.8);camera.lookAt(0,0,0);
- const particleCity=createParticleCity(THREE,scene,camera),assembly=createAssembly(THREE);
- const uniforms={uTime:{value:0},uPhase:{value:0},uLevel:{value:0},uDpr:{value:1},uMapMix:{value:0}};
+ const particleCity=createParticleCity(THREE,scene,camera),assembly=createAssembly(THREE),center=state.mapOnly?{update:()=>0,close(){}}:createCenter(THREE,scene);
+ const uniforms={uTime:{value:0},uPhase:{value:0},uLevel:{value:0},uDpr:{value:1},uMapMix:{value:0},uActivity:{value:0},uCoreFade:{value:1}};
  const ribbons=new THREE.Group();scene.add(ribbons);const geometry=makeRibbonGeometry();
  for(let i=0;i<6;i++){
   const material=new THREE.ShaderMaterial({uniforms:{...uniforms,uSeed:{value:i}},vertexShader:meshVertex,
@@ -54,7 +56,7 @@ export function createVisual(canvas,state,metrics){
   threads.push(x,y,z,x,y+.12+(i%7)*.055,z);
  }
  const threadG=new THREE.BufferGeometry();threadG.setAttribute("position",new THREE.Float32BufferAttribute(threads,3));
- const threadM=new THREE.LineBasicMaterial({color:0x5594b7,transparent:true,opacity:.060,
+ const threadM=new THREE.LineBasicMaterial({color:0x6654a6,transparent:true,opacity:.060,
   depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false});
  scene.add(new THREE.LineSegments(threadG,threadM));
  const orbits=[];
@@ -62,7 +64,7 @@ export function createVisual(canvas,state,metrics){
   const pts=[];
   for(let i=0;i<=240;i++){const a=i/240*Math.PI*2;pts.push(new THREE.Vector3(Math.cos(a)*(1.69+k*.025),Math.sin(a)*(.58+k*.11),0));}
   const g=new THREE.BufferGeometry().setFromPoints(pts);
-  const m=new THREE.LineBasicMaterial({color:k===3?0xf1b38f:0x89c5df,transparent:true,opacity:k===3?.16:.20,
+  const m=new THREE.LineBasicMaterial({color:k===3?0xeaa5d9:0xb2a9ef,transparent:true,opacity:k===3?.16:.20,
    depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false});
   const orbit=new THREE.Line(g,m);orbit.rotation.set(.24+k*.36,k*.28,k*.39);scene.add(orbit);orbits.push(orbit);
  }
@@ -107,15 +109,18 @@ export function createVisual(canvas,state,metrics){
    const target=Number(!!state.mapReady);
    mapMix=THREE.MathUtils.clamp(mapMix+Math.sign(target-mapMix)*dt/2.6,0,1);cityMix=mapMix;
   }
+  const centerMix=center.update(state,elapsed,dt,metrics,state.mapOnly||mapMix>.01||transfer.active);
+  const activity=visualActivity(state);uniforms.uActivity.value+=(activity.code-uniforms.uActivity.value)*Math.min(1,dt*5);uniforms.uCoreFade.value=1-centerMix;
+  metrics.visualActivity=activity.name;metrics.activityCode=Number(uniforms.uActivity.value.toFixed(2));metrics.palette="indigo-violet-rose-starlight";
   uniforms.uMapMix.value=THREE.MathUtils.smoothstep(mapMix,0,.48);metrics.mapMix=Number(mapMix.toFixed(3));
   metrics.transferPhase=transfer.active?transfer.phase:"idle";metrics.transferProgress=Number(transfer.progress.toFixed(3));
   metrics.transferDirection=transfer.direction;metrics.morphDuration=2.6;
   metrics.morphDirection=transfer.active?"transfer":mapMix===Number(!!state.mapReady)?"stable":state.mapReady?"city":"energy";
   if(!transfer.active&&!state.mapReady&&mapMix===0)particleCity.hide();
   else particleCity.update(renderState,cityMix,elapsed,metrics,transfer);
-  for(const orbit of orbits)orbit.visible=!state.mapOnly&&mapMix<.95;
-  ribbons.visible=!state.mapOnly;
-  for(let i=1;i<layers.length;i++)layers[i].visible=!state.mapOnly;
+  for(const orbit of orbits)orbit.visible=!state.mapOnly&&mapMix<.95&&centerMix<.8;
+  ribbons.visible=!state.mapOnly&&centerMix<.999;
+  for(let i=1;i<layers.length;i++)layers[i].visible=!state.mapOnly&&centerMix<.999;
   uniforms.uTime.value=elapsed;uniforms.uPhase.value=phase;uniforms.uLevel.value=level;ribbons.rotation.z=Math.sin(elapsed*.08)*.055;
   for(let i=0;i<orbits.length;i++)orbits[i].rotation.z+=dt*(i%2?.016:-.012);
   renderer.info.reset();renderer.setRenderTarget(sceneTarget);renderer.render(scene,camera);
@@ -129,7 +134,7 @@ export function createVisual(canvas,state,metrics){
   metrics.postPasses=mapMix<.995?6:1;
   metrics.gpuGeometries=renderer.info.memory.geometries;metrics.gpuTextures=renderer.info.memory.textures;
   metrics.gpuPrograms=renderer.info.programs?.length||0;
-  combine.uniforms.uBloomGain.value=.65*(1-THREE.MathUtils.smoothstep(mapMix,0,.45));
+  combine.uniforms.uBloomGain.value=.65*(1-THREE.MathUtils.smoothstep(mapMix,0,.45))*(1-centerMix*.78);
   combine.uniforms.uExposure.value=(1.15+phase*.04+level*.035)*(1-mapMix)+.95*mapMix;renderPost(combine,null);
   assembly.update(state,transfer,width,height,dpr,metrics);assembly.render(renderer);
   const cost=performance.now()-begin;
@@ -142,5 +147,5 @@ export function createVisual(canvas,state,metrics){
  resize();addEventListener("resize",resize);schedule();
  canvas.addEventListener("webglcontextlost",event=>{event.preventDefault();metrics.ready=false;window.__renderError="WebGL context lost";});
  return {setLowQuality(low){state.cityParticleBudget=low?16000:36000;budget=1000/(low?20:30);dpr=low?1:Math.min(devicePixelRatio||1,1.25);resize();},
-  stop(){running=false;cancelAnimationFrame(frameRequest);clearTimeout(hiddenTimer);assembly.close();removeEventListener("resize",resize);particleCity.close();renderer.dispose();sceneTarget.dispose();ping.dispose();pong.dispose();}};
+  stop(){running=false;cancelAnimationFrame(frameRequest);clearTimeout(hiddenTimer);assembly.close();center.close();removeEventListener("resize",resize);particleCity.close();renderer.dispose();sceneTarget.dispose();ping.dispose();pong.dispose();}};
 }

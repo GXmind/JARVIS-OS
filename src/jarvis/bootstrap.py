@@ -35,5 +35,6 @@ def create_server(state, *, services: HttpServices | None = None):
 def run_desktop(settings, config_error=None):
     state=create_state(settings)
     server=create_server(state)
+    state.audio.warmup(settings)
     state.start_voice()
     return run(state,server,config_error)

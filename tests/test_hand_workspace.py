@@ -104,7 +104,7 @@ class ReplicaHTTPTests(unittest.TestCase):
  def call(self,path,body=None,map_role=False):
   return self.opener.open(request.Request(self.server.origin+path,data=None if body is None else json.dumps(body).encode(),headers={"X-Jarvis-Token":self.server.map_token if map_role else self.server.token,"Content-Type":"application/json"}),timeout=3)
  def test_replica_cannot_record_send_configure_stop_quit_or_replace_seed(self):
-  for path in ("/api/wake","/api/map/depart","/api/map/dispatch","/api/record","/api/send","/api/stop","/api/config","/api/close","/api/map/publish","/api/map/view","/api/map/detach","/api/map/gesture"):
+  for path in ("/api/center/close","/api/center/result","/api/wake","/api/map/depart","/api/map/dispatch","/api/record","/api/send","/api/stop","/api/config","/api/close","/api/map/publish","/api/map/view","/api/map/detach","/api/map/gesture"):
    with self.subTest(path=path):
     with self.assertRaises(error.HTTPError) as caught:self.call(path,{},True)
     self.assertEqual(caught.exception.code,403);caught.exception.close()

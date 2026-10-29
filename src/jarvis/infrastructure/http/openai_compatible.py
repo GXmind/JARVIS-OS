@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 import json
 import logging
 import socket
+import threading
 from urllib import request, error
 import uuid
 from jarvis.domain.settings import api_base
@@ -59,9 +60,17 @@ class CloudAPI:
         except (ValueError, UnicodeError):
             raise ServiceError("服务商返回的不是有效 JSON。") from None
 
+    def chat_payload(self,messages,stream):
+        payload={"model":self.settings.API_MODEL,"messages":messages,"stream":stream}
+        mode=self.settings.RESPONSE_MODE
+        if urlsplit(self.base).hostname=="api.deepseek.com" and self.settings.API_MODEL in ("deepseek-flash","deepseek-v4-pro","deepseek-v4-flash") and mode!="provider":
+            payload["thinking"]={"type":"disabled" if mode=="fast" else "enabled"}
+            if mode in ("balanced","deep"):payload["reasoning_effort"]="low" if mode=="balanced" else "high"
+        return payload
+
     def chat(self, messages):
         result = self._json("/chat/completions",
-                            {"model": self.settings.API_MODEL, "messages": messages, "stream": False})
+                            self.chat_payload(messages,False))
         try:
             text = result["choices"][0]["message"]["content"]
             if not isinstance(text, str) or not text.strip():
@@ -69,6 +78,64 @@ class CloudAPI:
             return text.strip()
         except (KeyError, IndexError, TypeError, ValueError):
             raise ServiceError("云端响应缺少文字回复；请确认模型支持 Chat Completions。") from None
+
+    def chat_stream(self,messages,cancel=None):
+        if not self.base or not self.settings.API_KEY.strip():raise ServiceError("请先配置对话 API 地址及密钥。")
+        payload=json.dumps(self.chat_payload(messages,True),ensure_ascii=False).encode("utf-8")
+        req=request.Request(self.base+"/chat/completions",data=payload,headers={"Authorization":"Bearer "+self.settings.API_KEY,"Content-Type":"application/json","Accept":"text/event-stream"},method="POST")
+        total=0;seen=False;finished=False;complete=threading.Event()
+        try:
+            with self.opener.open(req,timeout=int(self.settings.REQUEST_TIMEOUT)) as response:
+                if cancel:
+                    def watch_cancel():
+                        while not complete.wait(.05):
+                            if cancel.is_set():
+                                raw=getattr(getattr(response,"fp",None),"raw",None);sock=getattr(raw,"_sock",None)
+                                if sock:
+                                    try:
+                                        sock.shutdown(socket.SHUT_RDWR)
+                                        # Closing the raw makefile releases its socket reference on Windows;
+                                        # shutdown alone does not interrupt a buffered readline there.
+                                        raw.close();sock.close()
+                                    except (OSError,ValueError):pass
+                                return
+                    threading.Thread(target=watch_cancel,daemon=True,name="jarvis-stream-cancel").start()
+                if "application/json" in response.headers.get("Content-Type",""):
+                    raw=response.read(8_000_001)
+                    if len(raw)>8_000_000:raise ServiceError("云端回复超过大小限制。")
+                    text=json.loads(raw)["choices"][0]["message"]["content"]
+                    if not isinstance(text,str) or not text.strip():raise ValueError()
+                    yield text;return
+                while True:
+                    if cancel and cancel.is_set():return
+                    line=response.readline(65537);total+=len(line)
+                    if len(line)>65536 or total>8_000_000:raise ServiceError("流式回复超过大小限制。")
+                    if not line:break
+                    if not line.startswith(b"data:"):continue
+                    raw=line[5:].strip()
+                    if raw==b"[DONE]":finished=True;break
+                    if not raw:continue
+                    event=json.loads(raw)
+                    if event.get("error"):raise ServiceError("云端流式回复中断，请重试。")
+                    for choice in event.get("choices",[]):
+                        if choice.get("index",0)!=0:continue
+                        if choice.get("finish_reason"):finished=True
+                        text=choice.get("delta",{}).get("content")
+                        if text:
+                            if not isinstance(text,str):raise ValueError()
+                            seen=True;yield text
+                if cancel and cancel.is_set():return
+                if not seen or not finished:raise ServiceError("云端流式回复未完整结束，请重试或在 F2 关闭流式回复。")
+        except error.HTTPError as exc:
+            code=exc.code;exc.close();LOG.warning("stream_http_error status=%s",code)
+            raise ServiceError(f"流式对话 API 错误 {code}，请检查凭证和接口；不支持流式时可在 F2 关闭。") from None
+        except (error.URLError,socket.timeout,TimeoutError,OSError):
+            if cancel and cancel.is_set():return
+            raise ServiceError("流式对话连接中断或超时，请重试。") from None
+        except (ValueError,KeyError,IndexError,TypeError,UnicodeError):
+            if cancel and cancel.is_set():return
+            raise ServiceError("流式回复格式无效，请核对兼容接口。") from None
+        finally:complete.set()
 
     def transcription_client(self):
         base,key=self.settings.asr_connection()

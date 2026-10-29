@@ -130,3 +130,7 @@ npm test
 ## 可选自动唤醒
 
 运行 `scripts/install_wake.cmd` 安装本机关键词模型和 requirements-wake.txt；自动唤醒依赖 Vosk，并非标准库功能。详见 [语音唤醒](docs/voice-wake.md)。中文指令仍需单独配置 ASR。可运行 `scripts/check_wake.py --microphone`，它不调用云端。
+
+## 自由粒子交互检查
+
+新功能仍不需要 npm 构建或额外绘图框架，使用已提供的 Three.js、Worker、Path2D 和 Windows System.Speech。运行 `scripts/check_center.py` 检查状态形态、自由几何、模型变形、键帧、地图优先级和关闭。默认不调用模型；显式加 `--live-drawing --live-chat --audio` 可做真实接口及播报检查，报告仅留本机。操作和能力边界见 [中心交互](docs/center-actions.md)。

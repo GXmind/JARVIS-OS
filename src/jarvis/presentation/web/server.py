@@ -121,7 +121,10 @@ class DesktopServer:
                     elif path=="/api/hand/status":
                         self.respond(200,outer.services.hand_status())
                     elif path=="/api/state":
-                        self.respond(200,outer.state.snapshot())
+                        from urllib.parse import parse_qs
+                        try:since=int(parse_qs(urlsplit(self.path).query).get("center_id",["-1"])[0])
+                        except ValueError:since=-1
+                        self.respond(200,outer.state.snapshot(since))
                     elif path=="/api/weather":
                         self.respond(200,outer.state.weather.snapshot())
                     elif path=="/api/map/config":
@@ -197,10 +200,14 @@ class DesktopServer:
                         if self.role()=="map" and values.get("epoch")!=outer.state.map_workspace.epoch:raise ServiceError("地图窗口已过期。")
                         outer.state.map_workspace.close_map()
                         if outer.services.map_windows:outer.services.map_windows.close()
+                    elif action=="/api/center/result":
+                        outer.state.center_result(values)
+                    elif action=="/api/center/close":
+                        outer.state.close_center()
                     elif action=="/api/wake":
                         outer.state.set_wake(values.get("enabled"))
                     elif action=="/api/send":
-                        outer.state.send(values.get("text",""))
+                        outer.state.send(values.get("text",""),visual=values.get("visual",False))
                     elif action=="/api/record":
                         outer.state.record()
                     elif action=="/api/stop":

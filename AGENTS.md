@@ -18,3 +18,7 @@
 
 - Wake listening stays offline and shares the audio lock with command capture. Pause and release the listener before recording, resume after response; never save/upload ambient PCM. Test synthesized decoder behavior separately from real human accuracy.
 - Map transfer must prewarm hidden, finish primary departure before revealing destination, and gate controls until assembly completes. Test native hidden-window scheduling and strict stages; never rewind independent state on a late ready. Geometry workers coalesce pending views and reject stale results.
+
+- Free visual prompts must reach the cloud designer in full. Never substitute built-in objects in cloud mode; reserve them for explicit offline demos. Descriptive edits retain scene context. F4 routes arbitrary prompts without requiring object keywords.
+- Generated visuals are validated data only: paths, vertices, patches, profiles and bounded transform tracks. Do not execute generated code, SVG documents or external resources. Keep sampling, queues and buffers bounded; do not repeat unchanged scene geometry in polling.
+- Preserve dedicated map/model visual priority, independent secondary maps, real render acknowledgements and cancellation. Verify streamed speech with one output device and distinguish measured first-token/first-audio latency from human sound quality.

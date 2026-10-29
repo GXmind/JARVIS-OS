@@ -130,3 +130,15 @@ GPU 传送过程将道路和建筑等真实几何采样成有预算的粒子流�
 domain/voice.py 是纯唤醒匹配、置信度和语音端点规则；infrastructure/audio/wake.py 管理本机离线解码器与麦克风；application/session.py 通过注入的 wake_factory 编排唤醒、提示、单轮指令录音与恢复。监听和录音共用 Audio 锁，先释放监听才录音；副屏没有 /api/wake 能力。
 
 城市纯几何移到 rendering/city_worker.js，通过 city_builder.js 合并任务并丢弃旧结果；主线程只提交最新 typed arrays，旧城市保留至新几何就绪，缓冲复用。传送状态机严格区分 preparing/prepared/departing/in_transit/assembling/independent。原生窗口隐藏预热，只有 dispatch 才显示；到达后 assembly.js 采样界面字形粒子，与地图入屏衔接。ready 重试不允许倒退状态，完成重组前拒绝遥控动作。
+
+## 自由绘制与流式语音
+
+- domain/center.py：绘制意图、纯场景协议、自由路径/网格/曲面及关键帧校验，内置数据仅离线演示。
+- application/center.py：把完整提示词和可选已有场景交给注入的云端端口，流式接收 JSON、一次有界格式修正；不执行模型代码，不按对象关键词替换云端请求。
+- application/session.py：绘制、描述性编辑、取消、渲染确认与版本隔离，流式分句队列和播放编排；场景按版本发送，未变化时省略大几何。
+- rendering/center_geometry.js、center_worker.js：自由采样与离屏路径栅格化，面积分配和有界采样、最新任务合并；center.js 复用缓冲和 32 个节点变换矩阵；animation.js 为纯关键帧插值。
+- rendering/activity.js 与 shaders.js：明确的活动状态及星空配色；地图和图景优先于对话形态。
+- infrastructure/http/openai_compatible.py：SSE 解码、内容与 reasoning 分离、连接取消及受支持 DeepSeek 模型的可配置思考模式。其他提供方不接收专用参数。
+- infrastructure/audio/windows_tts.py、tts_worker.ps1、sequence.py：复用系统合成器进程、最多两个在途任务和单个连续 PCM 输出流；文本通过 JSON 传递，字幕沿实际样本进度更新。
+
+副屏受限令牌不能触发新绘制、绘制结果回执、语音、设置或全局退出。主屏图景不进入副屏地图快照；副屏独立性保持。所有生成描述与临时语音均留在固定根目录，不增加桌面/C盘缓存。

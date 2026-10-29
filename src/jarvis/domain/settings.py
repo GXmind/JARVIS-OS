@@ -28,6 +28,9 @@ class Settings:
     API_MODEL: str = ""
     API_KEY: str = ""
     CHAT_MODE: str = "mock"
+    CHAT_STREAM: str = "true"
+    RESPONSE_MODE: str = "fast"
+    VISUAL_RESPONSE_MODE: str = "balanced"
     ASR_MODE: str = "off"
     ASR_MODEL: str = ""
     ASR_BASE_URL: str = ""
@@ -94,6 +97,9 @@ class Settings:
             raise ValueError("启用云端功能前请填写对应的 API 基础地址。")
         for key, modes in {
             "CHAT_MODE": ("mock", "api"),
+            "CHAT_STREAM": ("true", "false"),
+            "RESPONSE_MODE": ("provider", "fast", "balanced", "deep"),
+            "VISUAL_RESPONSE_MODE": ("provider", "fast", "balanced", "deep"),
             "ASR_MODE": ("off", "api"),
             "TTS_MODE": ("off", "windows", "api"),
             "AUTO_SPEAK": ("true", "false"),

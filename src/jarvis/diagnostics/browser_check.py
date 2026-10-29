@@ -98,7 +98,7 @@ class DevTools:
         path.write_bytes(base64.b64decode(data["data"]))
 
     def key(self,key,code=None):
-        number={"Escape":27,"Enter":13,"F2":113,"F3":114,"F6":117,"F8":119}.get(key,0)
+        number={"Escape":27,"Enter":13,"F2":113,"F3":114,"F4":115,"F6":117,"F8":119,"F9":120,"F10":121}.get(key,0)
         params={"key":key,"code":code or key,"windowsVirtualKeyCode":number,"nativeVirtualKeyCode":number}
         self.call("Input.dispatchKeyEvent",{"type":"keyDown",**params})
         self.call("Input.dispatchKeyEvent",{"type":"keyUp",**params})

@@ -101,3 +101,9 @@ AUTO_SPEAK="true"
 ## 本机唤醒与中文语音识别
 
 “Hi Jarvis”使用本机 Vosk 关键词识别，无需申请唤醒 API。运行 scripts/install_wake.cmd 后使用；F10 开关，F2 配置等待和静音时限。唤醒后中文指令仍交给已配置的独立 ASR，不能把仅支持文本对话的模型填入语音识别栏。见 [语音唤醒](voice-wake.md)。
+
+## 流式回应与自由绘制
+
+F2 设置 `CHAT_STREAM=true` 可边接收文字边准备播报；服务不支持流式时可关闭。DeepSeek 官方支持模型的 `RESPONSE_MODE` 默认为 fast，避免默认高强度思考拉长日常回应；`VISUAL_RESPONSE_MODE` 默认 balanced，供自由图景设计使用，可分别选择 fast / balanced / deep / provider。对应 [官方思考控制](https://api-docs.deepseek.com/guides/thinking_mode/)。其他服务不发送这些专用参数。
+
+自由绘制复用当前对话模型接口，无需额外绘图 API Key。模型把完整提示词转换为自由路径、曲面、网格、关键帧等 JSON，再由本机粒子渲染；这与调用照片级图片生成服务不同。配置后所有创建请求都由云端设计，内置对象仅作明确标注的离线演示。F4 可输入无固定句式的提示词；绘制精细程度取决于所选模型的设计能力。

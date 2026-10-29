@@ -60,6 +60,9 @@ class Audio:
         self.lock = threading.Lock()
         self.level = 0.0
         self.capture_active = False
+        self._tts=None
+        self._tts_lock=threading.Lock()
+        self.speech_metrics={}
 
     def prepare(self):
         self.level = 0.0
@@ -72,6 +75,7 @@ class Audio:
     def close(self):
         self.closed.set()
         self.stop()
+        if self._tts:self._tts.close()
 
     def measure(self, data):
         samples = array("h", data[:len(data) // 2 * 2])
@@ -280,32 +284,31 @@ class Audio:
             if process and process.poll() is None:process.kill();process.wait(timeout=5)
             source.unlink(missing_ok=True);pcm.unlink(missing_ok=True);cues.unlink(missing_ok=True)
 
+    def system_voice(self):
+        with self._tts_lock:
+            if self._tts is None:
+                from jarvis.infrastructure.audio.windows_tts import WindowsSynthesizer
+                self._tts=WindowsSynthesizer()
+        return self._tts
+
+    def warmup(self,settings):
+        if settings.TTS_MODE=="windows":
+            def prepare_voice():
+                try:self.system_voice().warmup()
+                except ServiceError:LOG.warning("system_voice_warmup_unavailable")
+            threading.Thread(target=prepare_voice,daemon=True,name="jarvis-voice-warmup").start()
+
+    def speak_iter(self,chunks,settings,on_line=None):
+        from jarvis.infrastructure.audio.sequence import speak_sequence
+        if settings.TTS_MODE=="off":return "播报已关闭。"
+        def synthesize(line,path,cancel):
+            if settings.TTS_MODE=="windows":self.system_voice().synthesize(line,path,self.stop_event,cancel)
+            else:CloudAPI(settings).synthesize(line,path)
+        try:self.speech_metrics=speak_sequence(self,chunks,settings,on_line,sounddevice(),device_id,synthesize)
+        except (ServiceError,ValueError):raise
+        except Exception:raise ServiceError("连续语音播放失败，请检查输出设备与 PCM WAV 格式。") from None
+        return "播报结束。"
+
     def speak(self,text,settings,on_line=None):
         from jarvis.domain.text import lines_for_speech
-        if settings.TTS_MODE=="off":return "播报已关闭。"
-        lines=lines_for_speech(text[:2000])
-        output=ROOT/"cache"/("tts_"+uuid.uuid4().hex+".wav")
-        if settings.TTS_MODE=="windows":
-            marks=self.windows_speech_lines(lines,output)
-            index=-1
-            def progress(seconds):
-                nonlocal index
-                while index+1<len(lines) and seconds+.015>=marks[index+1]:
-                    index+=1
-                    if on_line:on_line(lines[index])
-            progress(0)
-            if not self.closed.is_set() and not self.stop_event.is_set():self.play(output,settings,progress)
-        else:
-            # Remote synthesis is generated ahead of playback to avoid network gaps.
-            from concurrent.futures import ThreadPoolExecutor
-            def generate(item):
-                i,line=item;path=output.with_name(output.stem+"_"+str(i)+".wav")
-                CloudAPI(settings).synthesize(line,path);return path
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                futures=[pool.submit(generate,item) for item in enumerate(lines)]
-                for i,future in enumerate(futures):
-                    path=future.result()
-                    if self.closed.is_set() or self.stop_event.is_set():break
-                    if on_line:on_line(lines[i])
-                    self.play(path,settings)
-        return "播报结束。"
+        return self.speak_iter(iter(lines_for_speech(text[:2000])),settings,on_line)

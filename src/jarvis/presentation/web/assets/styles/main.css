@@ -1,14 +1,14 @@
-:root{color-scheme:dark;font-family:"Microsoft YaHei UI","Segoe UI",sans-serif;color:#c8e3e6;background:#02040a}
+:root{color-scheme:dark;font-family:"Microsoft YaHei UI","Segoe UI",sans-serif;color:#ddd9ef;background:#04030c}
 *{box-sizing:border-box}
 html,body{width:100%;height:100%;margin:0;overflow:hidden}
 button,input,select{font:inherit}
 [hidden]{display:none!important}
-#space{position:fixed;inset:0;width:100%;height:100%;background:#02040a}
+#space{position:fixed;inset:0;width:100%;height:100%;background:#04030c}
 #dragZone{position:fixed;top:0;left:0;right:0;height:38px;z-index:2;cursor:move}
 .identity{position:fixed;left:0;right:0;top:9.5%;text-align:center;pointer-events:none}
 .wordmark{font-family:"Segoe UI Light","Segoe UI",sans-serif;font-size:13px;font-weight:300;letter-spacing:11px;color:#d1edf5;opacity:.72;text-indent:11px}
-#phaseLabel{font-size:11px;letter-spacing:3px;color:#71939c;margin-top:17px;opacity:.8;transition:color 1s}
-#subtitle{position:fixed;bottom:14%;left:18%;right:18%;font-size:14px;line-height:1.9;letter-spacing:1px;text-align:center;color:#b6d6df;opacity:0;transition:opacity .7s;text-shadow:0 0 20px #67aaca38;max-height:100px;overflow:hidden;white-space:pre-line;pointer-events:none}
+#phaseLabel{font-size:11px;letter-spacing:3px;color:#a29cc6;margin-top:17px;opacity:.8;transition:color 1s}
+#subtitle{position:fixed;bottom:14%;left:18%;right:18%;font-size:14px;line-height:1.9;letter-spacing:1px;text-align:center;color:#c8c0e7;opacity:0;transition:opacity .7s;text-shadow:0 0 20px #9967ca38;max-height:100px;overflow:hidden;white-space:pre-line;pointer-events:none}
 #subtitle.visible{opacity:.86}
 #hints{position:fixed;bottom:5%;left:0;right:0;text-align:center;font-size:10px;letter-spacing:1.7px;color:#789199;opacity:0;transition:opacity 1.2s;pointer-events:none}
 #hints.visible{opacity:.65}
@@ -112,3 +112,9 @@ h1{font-size:25px;font-weight:300;letter-spacing:5px;margin:24px 0 18px;color:#c
 .map-tools label{display:flex;align-items:center;gap:9px}.map-tools input{width:84px;height:2px;accent-color:#b9e8ec;cursor:pointer}.map-tools output{min-width:24px;color:#b3d6dd}
 .map-tools button{border:0;background:none;color:#93bec9;font-size:9px;cursor:pointer;padding:4px}.map-tools button:hover{color:#dbfaff}
 .city-controls{left:24%;right:24%;letter-spacing:0;font-size:8px}
+
+/* Starfield palette; existing unframed layout remains unchanged. */
+.brand-orbit,.brand strong{color:#dfd8ff}.brand small,.section-heading small{color:#a89bc8}
+.instrument,.core-footer{--accent:#b5a5f2}.section-heading>span:before{background:#c9b9ff;box-shadow:0 0 12px #9d77ef}
+.voice-dock button{border-color:#a58bd677;color:#d9c9fb;box-shadow:0 0 24px #845ed51a}
+#phaseLabel{color:#ada0d5}#subtitle.error{color:#ecb1cc}

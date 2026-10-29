@@ -1,11 +1,11 @@
 export const ribbonGLSL=`
-uniform float uTime; uniform float uPhase; uniform float uLevel; uniform float uMapMix;
+uniform float uTime; uniform float uPhase; uniform float uLevel; uniform float uMapMix; uniform float uActivity; uniform float uCoreFade;
 const float PI=3.14159265359;
 mat3 rotX(float a){float c=cos(a),s=sin(a);return mat3(1.,0.,0.,0.,c,s,0.,-s,c);}
 mat3 rotY(float a){float c=cos(a),s=sin(a);return mat3(c,0.,-s,0.,1.,0.,s,0.,c);}
 mat3 rotZ(float a){float c=cos(a),s=sin(a);return mat3(c,s,0.,-s,c,0.,0.,0.,1.);}
 vec3 ribbon(float t,float lane,float seed){
- float speed=uTime*.13,s=seed*1.618;
+ float speed=uTime*.075,s=seed*1.618;
  float width=.17+.055*sin(t*2.+s+uTime*.31)+uPhase*.048;
  float radius=1.16+.20*sin(t*3.+s+uTime*.17)+lane*width;
  radius+=uPhase*.075*sin(t*5.-uTime*.35+s)+uLevel*.075*sin(t*4.+s);
@@ -14,6 +14,12 @@ vec3 ribbon(float t,float lane,float seed){
  p=rotX(.48+seed*.48+uPhase*.18*sin(s))*rotZ(seed*1.09+speed*.26)*p;
  p=rotY(speed*.42+sin(uTime*.09)*.2)*p;
  p.y+=.04*sin(uTime*.6+s);
+ float listen=max(0.,1.-abs(uActivity-1.)),transcribe=max(0.,1.-abs(uActivity-2.)),think=max(0.,1.-abs(uActivity-3.)),speak=max(0.,1.-abs(uActivity-4.)),model=max(0.,1.-abs(uActivity-5.));
+ vec3 listening=rotX(.50)*vec3(cos(t)*(1.35+uLevel*.23),sin(t)*(1.35+uLevel*.23),sin(t*4.+uTime*1.8+s)*(.08+uLevel*.18)+lane*.10);
+ vec3 thinking=rotY(uTime*.45+seed*.3)*rotX(seed*.72)*vec3(cos(t)*(.78+lane*.10),sin(t)*(.78+lane*.10),sin(t*3.-uTime*1.8+s)*.28);
+ vec3 voice=p*(1.+.12*sin(t*3.-uTime*2.)+.18*uLevel);voice.y+=sin(t*5.-uTime*2.+s)*(.06+uLevel*.25);
+ p=mix(p,listening,listen*.90);p=mix(p,rotZ(uTime*.34)*p*vec3(.85,1.15,.85),transcribe*.8);
+ p=mix(p,thinking,think*.94);p=mix(p,voice,speak*.95);p=mix(p,rotY(uTime*.7)*vec3(cos(t)*.8,sin(t*2.+s)*1.3,sin(t)*.8),model*.9);
  // Unfurl the curved energy ribbons into a thin, wide plane before dissolving.
  vec3 plane=vec3((t/PI-1.)*2.25,lane*.40+sin(t*2.+s)*.38,0.);
  return mix(p,plane,smoothstep(0.,1.,uMapMix));
@@ -26,7 +32,7 @@ void main(){vUv=uv;vec3 p=ribbon(uv.x*PI*2.,(uv.y-.5)*2.,uSeed);
  vec4 world=modelMatrix*vec4(p,1.);vWorld=world.xyz;gl_Position=projectionMatrix*viewMatrix*world;}
 `;
 export const meshFragment=`
-uniform float uTime;uniform float uSeed;uniform float uPhase;uniform float uMapMix;
+uniform float uTime;uniform float uSeed;uniform float uPhase;uniform float uMapMix;uniform float uCoreFade;
 varying vec2 vUv;varying vec3 vWorld;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 void main(){
@@ -43,14 +49,14 @@ void main(){
  float fine=.5+.5*sin(vUv.x*760.+vUv.y*210.+uTime*.7);
  float grain=hash(floor(vUv*vec2(1600.,120.)));
  float flow=.65+.35*sin(vUv.x*20.-uTime*.45+uSeed*2.);
- vec3 ice=vec3(.20,.65,1.),pearl=vec3(.80,.94,1.),warm=vec3(1.,.72,.57);
+ vec3 ice=vec3(.25,.25,1.),pearl=vec3(.91,.82,1.),warm=vec3(.98,.31,.66);
  float tint=.5+.5*sin(uSeed*2.1+vUv.x*4.);
  vec3 color=mix(ice,pearl,.34+.35*tint);
  if(uSeed>3.4)color=mix(color,warm,.40+.25*sin(vUv.x*6.+uSeed));
  color=mix(color,vec3(.65,.68,1.),uPhase*.12);
  float intensity=.65+fibers*1.1+fine*.02+fresnel*.45+grain*.06;
  float alpha=edge*(.065+fibers*.10+fresnel*.070)*flow;
- gl_FragColor=vec4(color*intensity*1.5,alpha*(1.-uMapMix));
+ gl_FragColor=vec4(color*intensity*1.5,alpha*(1.-uMapMix)*uCoreFade);
 }
 `;
 export const pointsVertex=ribbonGLSL+`
@@ -77,10 +83,10 @@ void main(){
  }
  vec4 mv=modelViewMatrix*vec4(p,1.);gl_Position=projectionMatrix*mv;
  gl_PointSize=clamp(size*uDpr*(7.0/-mv.z),.65,4.5);
- vColor=mix(vec3(.38,.68,1.),vec3(.92,.97,1.),aSeed.w);
- if(aSeed.z>.85 && uMode>1.5)vColor=mix(vColor,vec3(1.,.66,.45),.48);
+ vColor=mix(vec3(.35,.29,1.),vec3(.94,.86,1.),aSeed.w);
+ if(aSeed.z>.85 && uMode>1.5)vColor=mix(vColor,vec3(1.,.42,.68),.48);
  vAlpha=(.16+pow(aSeed.y,2.)*.65)*(.78+.22*sin(uTime*.6+aSeed.x*40.));
- if(uMode<.5)vAlpha*=.66;else if(uMode<2.5)vAlpha*=1.-uMapMix;
+ if(uMode<.5)vAlpha*=.66;else if(uMode<2.5)vAlpha*=(1.-uMapMix)*uCoreFade;
 }
 `;
 export const pointsFragment=`

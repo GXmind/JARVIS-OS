@@ -1,3 +1,4 @@
+import {bindCenterControls} from "./features/center.js";
 import {HandCamera} from "./features/hand/camera.js";
 import {MapWorkspaceClient} from "./features/map/workspace.js";
 import {$} from "./core/dom.js";
@@ -7,8 +8,9 @@ import {createHUD} from "./ui/hud.js";
 import {createWeatherController} from "./ui/weather.js";
 import {createSettings} from "./ui/settings.js";
 
+let visualPrompt=false,centerReport="";
 let navigation=null,navigationPromise=null,lastNavigationId=0;
-const canvas=$("space");
+const canvas=$("space");bindCenterControls(canvas,state);
 const api=createClient(window.JARVIS_TOKEN);
 const updateHUD=createHUD(state,metrics);
 const weather=createWeatherController(api,getNavigation);
@@ -41,10 +43,10 @@ function message(text,error=false,seconds=7){
 }
 async function poll(){
  try{
-  const data=await api("state");Object.assign(state,data);pollErrors=0;
-  const labels={idle:state.phase==="initial"?"静候指令":"与你同在",listening:"正在聆听",thinking:"正在思考",speaking:"正在回应"};
+  const data=await api("state?center_id="+(state.center?.id??-1));if(data.center?.same)data.center.plan=state.center?.plan;if(data.center?.active&&data.center?.plan?.title!==state.center?.plan?.title){state.centerYaw=0;delete state.centerPitch;state.centerZoom=1;}Object.assign(state,data);pollErrors=0;
+  const labels={idle:state.phase==="initial"?"静候指令":"与你同在",listening:"正在聆听",transcribing:"正在辨识语音",modeling:"正在编织粒子造型",thinking:"正在思考",speaking:"正在回应"};
   $("phaseLabel").textContent=(state.mapReady&&!state.mapDetached)?(state.mapTrip||"三维粒子城市 · 出行规划"):
-   (state.mapOpen&&!state.mapDetached)?(state.mapStatus||"正在准备导航…"):(labels[state.activity]||"静候指令");
+   (state.mapOpen&&!state.mapDetached)?(state.mapStatus||"正在准备导航…"):(state.center?.active?state.center.plan.title:labels[state.activity]||"静候指令");
   if(state.mapOpen&&!state.mapReady&&!state.mapDetached){
    $("subtitle").textContent=state.mapStatus||"正在准备导航…";
    $("subtitle").classList.toggle("visible",$("command").hidden);
@@ -52,6 +54,10 @@ async function poll(){
   }else if(state.presenting||Date.now()>localSubtitleUntil){
    $("subtitle").textContent=state.subtitle.slice(0,460);
    $("subtitle").classList.toggle("visible",!!state.subtitle&&$("command").hidden);
+  }
+  if(data.center?.active&&metrics.centerBuild===data.center.build){
+   const report=data.center.build+":"+(metrics.centerError?"error":!metrics.centerLoading&&metrics.centerMorph===1?"ready":"loading");
+   if(!report.endsWith("loading")&&centerReport!==report){centerReport=report;api("center/result",{build:data.center.build,ok:!metrics.centerError}).catch(()=>{});if(metrics.centerError)message("粒子绘制失败："+metrics.centerError,true,14);}
   }
   revision=data.revision;
   updateHUD();
@@ -67,7 +73,7 @@ async function poll(){
 poll();
 function hints(){clearTimeout(hintTimer);$("hints").classList.add("visible");hintTimer=setTimeout(()=>$("hints").classList.remove("visible"),6000);}
 hints();addEventListener("pointermove",hints,{passive:true});
-function closeCommand(){$("command").hidden=true;$("thought").blur();}
+function closeCommand(){$("command").hidden=true;$("thought").blur();visualPrompt=false;}
 function selectExit(n){
  exitSelection=(n+2)%2;
  $("continue").classList.toggle("selected",exitSelection===0);
@@ -81,7 +87,7 @@ $("continue").onpointerenter=()=>selectExit(0);
 $("quit").onpointerenter=()=>selectExit(1);
 $("command").onsubmit=async event=>{
  event.preventDefault();const text=$("thought").value.trim();if(!text)return;
- try{await api("send",{text});$("thought").value="";closeCommand();}
+ try{await api("send",{text,visual:visualPrompt});$("thought").value="";closeCommand();}
  catch(error){message(error.message,true);}
 };
 addEventListener("keydown",async event=>{
@@ -90,6 +96,7 @@ addEventListener("keydown",async event=>{
   if(!$("settingsLayer").hidden){$("settingsLayer").hidden=true;return;}
   if(!$("command").hidden){closeCommand();return;}
   if(navigation?.isOpen){navigation.close();return;}
+  if(state.center?.active||state.center?.pending){await api("center/close",{});return;}
   $("exitLayer").hidden?openExit():closeExit();return;
  }
  if(!$("exitLayer").hidden){
@@ -108,13 +115,14 @@ addEventListener("keydown",async event=>{
  if(event.key==="F8"&&!event.repeat){
   event.preventDefault();try{await api("record",{});}catch(error){message(error.message,true);}return;
  }
- if(event.key==="Enter"&&$("command").hidden){
+ if(event.key==="F4"){event.preventDefault();visualPrompt=true;document.querySelector("#command label").textContent="自由绘制 · 描述主体、色彩、构图和动作";$("thought").placeholder="例如：星河中的鲸鱼，尾巴缓慢摆动，周围有三颗金色星星";$("command").hidden=false;$("thought").focus();return;}
+ if(event.key==="Enter"&&$("command").hidden){visualPrompt=false;document.querySelector("#command label").textContent="告诉 JARVIS";
   event.preventDefault();$("subtitle").classList.remove("visible");$("command").hidden=false;$("thought").focus();
  }
 });
 $("dragZone").onpointerdown=event=>{if(event.button===0)api("drag",{}).catch(()=>{});};
 canvas.onpointerdown=event=>{
- if(state.mapReady&&!state.mapDetached)return;
+ if(state.mapReady&&!state.mapDetached||state.center?.active)return;
  if(Math.hypot(event.clientX-CX,event.clientY-CY)<R*.95)api("record",{}).catch(error=>message(error.message,true));
 };
 window.__sceneMetrics=metrics;
@@ -132,6 +140,6 @@ $("cameraToggle").onclick=()=>{if(camera.active){camera.stop();$("handPanel").hi
 $("handHide").onclick=()=>{const collapsed=document.querySelector(".hand-preview").classList.toggle("collapsed");$("handHide").textContent=collapsed?"显示预览":"隐藏预览";};
 $("mapDetach").onclick=()=>workspace.detach();$("mapReturn").onclick=()=>workspace.closeRemote();
 api("displays").then(displays=>{for(const display of displays){const option=document.createElement("option");option.value=display.id;option.textContent="屏幕 "+(display.id+1)+(display.primary?" · 主屏":"");$("mapDisplay").append(option);}}).catch(()=>{});
-addEventListener("pagehide",()=>{camera.stop();workspace.stop();});
+addEventListener("pagehide",()=>{camera.stop();workspace.stop();visual?.stop();});
 
 $("wakeToggle").onclick=async()=>{try{const config=await api("config");await api("wake",{enabled:config.WAKE_ENABLED!=="true"});}catch(error){message(error.message,true);}};
