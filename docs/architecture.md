@@ -115,3 +115,18 @@ HTML 使用原生 ES Modules，不需要 Vite/Webpack。canonical 资源地址�
 见 [构建说明](../BUILDING.md) 的完整命令和 [协作说明](../CONTRIBUTING.md) 的功能落点。新增接口需要无网络/无设备的替身测试；跨层导入由架构测试约束。结构变更还需前端几何、真实浏览器正反向动画及地图压力检查。真实服务联调与合成 SDK 测试分开记录。
 
 源代码迁移前在根目录 backups 中留存本机备份。用户 .env、数据库、录音及缓存不迁移、不改名；旧启动命令、快捷键和 HTTP API 保持兼容。直接导入旧 Python 模块的个人工具需要按本页路径更新。
+
+
+## 手势与多窗口扩展
+
+主窗口通过 MapWorkspace 冻结一次传送种子；后续主屏快照和视角与这个种子隔离。副屏有自己的 NavigationController 和城市数据请求，独立操作、切换已有出行方案、加载街区和退出。主屏对话、重新规划和结束导航不能覆盖或关闭副屏；副屏也不需要主屏网页持续轮询。两者仍复用 Python 本机数据服务，全局退出关闭整个应用。
+
+副屏令牌允许地图种子、动作队列、城市上下文和关闭自身，拒绝音频、对话、设置和全局退出。摄像头只在主屏运行，用户明确选择操作主屏或副屏。动作仅投递到选定目标；图像不进入 Python 或其他窗口。
+
+GPU 传送过程将道路和建筑等真实几何采样成有预算的粒子流，按实际目标方向离屏，在目标网页从相反边缘汇聚重组。主屏能量体在离屏末段恢复；窗口保持普通尺寸。无桌面透明覆盖层。架构与完整操作见 [手势地图](hand-map.md)。
+
+## 唤醒与流畅度扩展
+
+domain/voice.py 是纯唤醒匹配、置信度和语音端点规则；infrastructure/audio/wake.py 管理本机离线解码器与麦克风；application/session.py 通过注入的 wake_factory 编排唤醒、提示、单轮指令录音与恢复。监听和录音共用 Audio 锁，先释放监听才录音；副屏没有 /api/wake 能力。
+
+城市纯几何移到 rendering/city_worker.js，通过 city_builder.js 合并任务并丢弃旧结果；主线程只提交最新 typed arrays，旧城市保留至新几何就绪，缓冲复用。传送状态机严格区分 preparing/prepared/departing/in_transit/assembling/independent。原生窗口隐藏预热，只有 dispatch 才显示；到达后 assembly.js 采样界面字形粒子，与地图入屏衔接。ready 重试不允许倒退状态，完成重组前拒绝遥控动作。

@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {transferFrame} from "../src/jarvis/presentation/web/assets/rendering/transfer.js";
+const source={phase:"depart",started:100,duration:1900,direction:{x:-1,y:0}};
+let frame=transferFrame(source,100);assert(frame.active);assert.equal(frame.flight,0);assert.equal(frame.energyMix,1);assert.equal(frame.direction.x,-1);
+frame=transferFrame(source,1050);assert(frame.flight>.4&&frame.flight<.6);assert.equal(frame.energyMix,1);
+frame=transferFrame(source,1800);assert(frame.energyMix<.3);assert(frame.flight>.9);
+assert(!transferFrame(source,2100).active);assert.equal(transferFrame(source,2100).energyMix,0);
+const destination={phase:"arrive",started:100,duration:2200,direction:{x:1,y:0}};
+assert.equal(transferFrame(destination,50).flight,1);assert.equal(transferFrame(destination,100).flight,1);
+assert(transferFrame(destination,1600).flight>0&&transferFrame(destination,1600).flight<.5);
+assert.equal(transferFrame(destination,2500).flight,0);assert(!transferFrame({...source,finished:true},500).active);
+assert(!transferFrame(null,500).active);
+console.log("Directional departure, delayed destination assembly and primary energy restoration timing passed.");

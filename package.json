@@ -8,6 +8,6 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node tests/test_city_geometry.mjs && node tests/test_navigation_geometry.mjs && node tests/test_places.mjs && node tests/test_navigation_lifecycle.mjs && node tests/test_map_controls.mjs && node tests/test_frontend_architecture.mjs"
+    "test": "node tests/test_city_geometry.mjs && node tests/test_navigation_geometry.mjs && node tests/test_places.mjs && node tests/test_navigation_lifecycle.mjs && node tests/test_map_controls.mjs && node tests/test_frontend_architecture.mjs && node tests/test_hand_gestures.mjs && node tests/test_hand_camera.mjs && node tests/test_map_transfer.mjs && node tests/test_city_builder.mjs"
   }
 }

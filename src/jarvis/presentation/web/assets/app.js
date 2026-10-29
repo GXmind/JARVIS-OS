@@ -1,3 +1,5 @@
+import {HandCamera} from "./features/hand/camera.js";
+import {MapWorkspaceClient} from "./features/map/workspace.js";
 import {$} from "./core/dom.js";
 import {state,metrics} from "./core/state.js";
 import {createClient} from "./core/client.js";
@@ -41,9 +43,9 @@ async function poll(){
  try{
   const data=await api("state");Object.assign(state,data);pollErrors=0;
   const labels={idle:state.phase==="initial"?"静候指令":"与你同在",listening:"正在聆听",thinking:"正在思考",speaking:"正在回应"};
-  $("phaseLabel").textContent=state.mapReady?(state.mapTrip||"三维粒子城市 · 出行规划"):
-   state.mapOpen?(state.mapStatus||"正在准备导航…"):(labels[state.activity]||"静候指令");
-  if(state.mapOpen&&!state.mapReady){
+  $("phaseLabel").textContent=(state.mapReady&&!state.mapDetached)?(state.mapTrip||"三维粒子城市 · 出行规划"):
+   (state.mapOpen&&!state.mapDetached)?(state.mapStatus||"正在准备导航…"):(labels[state.activity]||"静候指令");
+  if(state.mapOpen&&!state.mapReady&&!state.mapDetached){
    $("subtitle").textContent=state.mapStatus||"正在准备导航…";
    $("subtitle").classList.toggle("visible",$("command").hidden);
    $("subtitle").classList.toggle("error",state.mapStage==="error");
@@ -53,6 +55,8 @@ async function poll(){
   }
   revision=data.revision;
   updateHUD();
+  const wake=data.wake||{};$("wakeToggle").textContent=wake.state==="waiting"?"hi jarvis · 唤醒待机":wake.state==="loading"?"唤醒准备中":wake.state==="error"?"唤醒未就绪":wake.state==="paused"?"唤醒暂歇":"F10 · 开启唤醒";
+  $("wakeToggle").title=wake.message||"F10 开关本机唤醒；唤醒后说出指令，说完自动结束。";
   if(data.navigation?.id>lastNavigationId){
    lastNavigationId=data.navigation.id;
    getNavigation().then(map=>map.handle(data.navigation)).catch(error=>message(error.message,true));
@@ -94,6 +98,8 @@ addEventListener("keydown",async event=>{
   return;
  }
  if(!$("settingsLayer").hidden)return;
+ if(event.key==="F10"&&!event.repeat){event.preventDefault();$("wakeToggle").click();return;}
+ if(event.key==="F9"&&!event.repeat){event.preventDefault();document.getElementById("cameraToggle").click();return;}
  if(event.key==="F2"){event.preventDefault();openSettings();return;}
  if(event.key==="F3"){
   event.preventDefault();getNavigation().then(map=>map.isOpen?map.close():map.open()).catch(error=>message(error.message,true));return;
@@ -108,10 +114,24 @@ addEventListener("keydown",async event=>{
 });
 $("dragZone").onpointerdown=event=>{if(event.button===0)api("drag",{}).catch(()=>{});};
 canvas.onpointerdown=event=>{
- if(state.mapReady)return;
+ if(state.mapReady&&!state.mapDetached)return;
  if(Math.hypot(event.clientX-CX,event.clientY-CY)<R*.95)api("record",{}).catch(error=>message(error.message,true));
 };
 window.__sceneMetrics=metrics;
 import("./features/map/controls.js").then(({bindMapControls})=>{
  bindMapControls(canvas,state,{onViewEnd:()=>navigation?.commitView(),onZoom:()=>navigation?.scheduleViewCommit()});
 }).catch(error=>message("地图手势加载失败："+error.message,true));
+
+const workspace=window.__mapWorkspace=new MapWorkspaceClient({api,state,getNavigation,message});
+const camera=window.__handCamera=new HandCamera({api,onAction:action=>workspace.gesture(action).catch(error=>message(error.message,true)),
+ video:$("handVideo"),overlay:$("handOverlay"),onStatus:(text,error=false)=>{
+  $("handStatus").textContent=text;$("cameraToggle").textContent=camera.active?"F9 · 关闭手势":"F9 · 启用手势";
+  $("handPanel").hidden=!camera.active;if(error)message(text,true,14);
+ }});
+$("cameraToggle").onclick=()=>{if(camera.active){camera.stop();$("handPanel").hidden=true;$("cameraToggle").textContent="F9 · 启用手势";}else{ $("handPanel").hidden=false;void camera.start();}};
+$("handHide").onclick=()=>{const collapsed=document.querySelector(".hand-preview").classList.toggle("collapsed");$("handHide").textContent=collapsed?"显示预览":"隐藏预览";};
+$("mapDetach").onclick=()=>workspace.detach();$("mapReturn").onclick=()=>workspace.closeRemote();
+api("displays").then(displays=>{for(const display of displays){const option=document.createElement("option");option.value=display.id;option.textContent="屏幕 "+(display.id+1)+(display.primary?" · 主屏":"");$("mapDisplay").append(option);}}).catch(()=>{});
+addEventListener("pagehide",()=>{camera.stop();workspace.stop();});
+
+$("wakeToggle").onclick=async()=>{try{const config=await api("config");await api("wake",{enabled:config.WAKE_ENABLED!=="true"});}catch(error){message(error.message,true);}};

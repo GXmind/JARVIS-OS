@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JARVIS · 星海</title><link rel="stylesheet" href="/styles/main.css">
+<title>JARVIS · 星海</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/hand.css">
 <script nonce="__TOKEN__">window.JARVIS_TOKEN="__TOKEN__";</script>
 <script type="module" src="/app.js" defer></script></head><body>
 <canvas id="space" aria-label="WebGL 全息能量体"></canvas>
@@ -61,7 +61,7 @@
 <div class="orb-coordinates right-coordinates"><span>＋</span><small>CORE / 01<br>ACTIVE FIELD</small></div>
 <div class="core-footer"><span id="coreCaption">等待您的下一句指令</span><small id="coreMode">INITIAL / 待机形态</small></div>
 <div id="subtitle" role="status"></div>
-<div class="voice-dock"><span id="voiceDockLeft">PC MICROPHONE</span><button id="voiceTrigger" aria-label="开始或停止录音"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v2a6 6 0 0 0 12 0v-2M12 19v3M8 22h8"/></svg></button><span id="voiceDockRight">F8 · 语音交互</span></div>
+<div class="voice-dock"><button id="wakeToggle" type="button" class="wake-toggle" title="F10 开关本机唤醒">hi jarvis · 唤醒待机</button><span id="voiceDockLeft">PC MICROPHONE</span><button id="voiceTrigger" aria-label="开始或停止录音"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v2a6 6 0 0 0 12 0v-2M12 19v3M8 22h8"/></svg></button><span id="voiceDockRight">F8 · 语音交互</span></div>
 <div id="hints">F8 语音<span>·</span>Enter 输入<span>·</span>F2 设置<span>·</span>F3 地图形态<span>·</span>Esc 退出</div>
 <section id="mapStage" class="city-overlay" hidden aria-label="三维粒子城市导航">
  <div id="cityViewLabel">起点街区 · 三维城市</div><p id="cityDataNote"></p><small class="city-controls">左键：移动地图 · 右键或 Shift 拖动：360°环绕与俯仰 · 滚轮：缩放</small>
@@ -87,4 +87,6 @@
 <div id="deviceList"></div>
 </section>
 </div>
+<div class="interaction-tools"><button id="cameraToggle" type="button">F9 · 启用手势</button><select id="handTarget" aria-label="手势操作目标"><option value="primary">操作主屏地图</option><option id="handTargetMap" value="map" disabled>操作副屏地图</option></select><select id="mapDisplay" aria-label="地图目标显示器"><option value="auto">自动选择另一屏</option></select><button id="mapDetach" type="button">地图移到另一屏</button><button id="mapReturn" type="button" hidden>关闭副屏地图</button></div>
+<section id="handPanel" hidden><div class="hand-preview"><video id="handVideo" muted playsinline></video><canvas id="handOverlay"></canvas></div><span id="handStatus">摄像头未开启</span><small>捏合拖动 · 食指旋转 · 双手捏合开合缩放<br>张掌停留后横划：粒子传送到另一屏</small><button id="handHide" type="button">隐藏预览</button></section>
 </body></html>

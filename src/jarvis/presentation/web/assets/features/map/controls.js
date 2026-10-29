@@ -1,7 +1,9 @@
+export const VIEW_KEYS=["cityYaw","cityPitch","cityZoom","cityPanX","cityPanY"];
 export const DEFAULT_EXTENT=1600;
 export const DEFAULT_HEIGHT_SCALE=16;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 export function resetMapView(state){
+ delete state.cityPendingReset;
  state.cityYaw=0;state.cityPitch=.62;state.cityZoom=1;state.cityPanX=0;state.cityPanY=0;
  state.cityDragMode=state.cityDragMode||"pan";
 }
@@ -46,7 +48,7 @@ export function bindMapControls(canvas,state,options={}){
   else gesture=null;
  }
  canvas.addEventListener("pointerdown",event=>{
-  if(!state.mapReady)return;
+  if(!state.mapReady||state.mapDetached)return;
   if(event.button!==0&&event.button!==2&&event.pointerType!=="touch")return;
   event.preventDefault();
   pointers.set(event.pointerId,{x:event.clientX,y:event.clientY,pan:event.button!==2&&!event.shiftKey&&state.cityDragMode!=="orbit"});
@@ -55,7 +57,7 @@ export function bindMapControls(canvas,state,options={}){
  canvas.addEventListener("pointermove",event=>{
   if(!pointers.has(event.pointerId)||!gesture)return;
   pointers.set(event.pointerId,{...pointers.get(event.pointerId),x:event.clientX,y:event.clientY});
-  if(!state.mapReady){pointers.clear();gesture=null;return;}
+  if(!state.mapReady||state.mapDetached){pointers.clear();gesture=null;return;}
   if(gesture.kind==="pinch"){
    const p=[...pointers.values()];if(p.length<2)return;
    const distance=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
@@ -74,9 +76,9 @@ export function bindMapControls(canvas,state,options={}){
   if(!pointers.size&&panDirty){panDirty=false;options.onViewEnd?.();}
  };
  canvas.addEventListener("pointerup",end);canvas.addEventListener("pointercancel",end);
- canvas.addEventListener("lostpointercapture",event=>{pointers.delete(event.pointerId);begin();});
+ canvas.addEventListener("lostpointercapture",event=>{pointers.delete(event.pointerId);begin();if(!pointers.size&&panDirty){panDirty=false;options.onViewEnd?.();}});
  canvas.addEventListener("contextmenu",event=>{if(state.mapReady)event.preventDefault();});
- canvas.addEventListener("wheel",event=>{if(state.mapReady){event.preventDefault();zoomView(state,event.deltaY);options.onZoom?.();}},{passive:false});
- canvas.addEventListener("dblclick",event=>{if(state.mapReady){event.preventDefault();resetMapView(state);}});
+ canvas.addEventListener("wheel",event=>{if(state.mapReady&&!state.mapDetached){event.preventDefault();zoomView(state,event.deltaY);options.onZoom?.();}},{passive:false});
+ canvas.addEventListener("dblclick",event=>{if(state.mapReady&&!state.mapDetached){event.preventDefault();resetMapView(state);}});
  return {reset:()=>resetMapView(state)};
 }

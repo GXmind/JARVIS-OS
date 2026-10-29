@@ -11,6 +11,9 @@ import threading
 import time
 import uuid
 import wave
+import math
+from collections import deque
+from jarvis.domain.voice import VoiceEndpoint
 
 from jarvis.infrastructure.http.openai_compatible import CloudAPI
 from jarvis.domain.errors import ServiceError
@@ -79,7 +82,7 @@ class Audio:
         else:
             self.level = 0.0
 
-    def recording(self, settings):
+    def recording(self, settings, *, automatic=False):
         if self.closed.is_set():
             raise ServiceError("音频服务已关闭。")
         if not self.lock.acquire(blocking=False):
@@ -90,6 +93,8 @@ class Audio:
             rate = int(settings.SAMPLE_RATE)
             audio_queue = queue.Queue(maxsize=100)
             trouble = threading.Event()
+            endpoint=VoiceEndpoint(rate,float(settings.WAKE_TIMEOUT_SECONDS),float(settings.WAKE_SILENCE_SECONDS)) if automatic else None
+            pre_roll=deque(maxlen=5)
             def callback(indata, frames, time_info, status):
                 if status:
                     trouble.set()
@@ -113,11 +118,22 @@ class Audio:
                         try:
                             block = audio_queue.get(timeout=0.08)
                             self.measure(block)
-                            wav.writeframesraw(block)
+                            if endpoint:
+                                was_started=endpoint.started;decision=endpoint.feed(block,time.monotonic()-start)
+                                if not was_started:
+                                    pre_roll.append(block)
+                                    if endpoint.started:
+                                        for previous in pre_roll:wav.writeframesraw(previous)
+                                        pre_roll.clear()
+                                else:wav.writeframesraw(block)
+                                if decision in ("end","timeout"):break
+                            else:wav.writeframesraw(block)
                         except queue.Empty:
                             pass
-                while not audio_queue.empty():
+                while not audio_queue.empty() and not automatic:
                     wav.writeframesraw(audio_queue.get_nowait())
+            if endpoint and not endpoint.started:
+                output.unlink(missing_ok=True);return None
             if trouble.is_set():
                 LOG.warning("recording_overflow")
                 raise ServiceError(f"录音出现丢帧，文件已保留：{output.name}。请更换设备或采样率。")
@@ -135,6 +151,15 @@ class Audio:
             self.capture_active = False
             self.level = 0.0
             self.lock.release()
+
+    def command_recording(self,settings):return self.recording(settings,automatic=True)
+
+    def wake_chime(self,settings):
+        path=ROOT/"cache/wake_chime.wav"
+        if not path.exists():
+            samples=array("h",(int(2800*math.sin(i*2*math.pi*880/16000)*math.sin(math.pi*i/1920)**2) for i in range(1920)))
+            with wave.open(str(path),"wb") as wav:wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(16000);wav.writeframes(samples.tobytes())
+        self.play(path,settings)
 
     def play(self, path, settings, on_position=None):
         sd = sounddevice()

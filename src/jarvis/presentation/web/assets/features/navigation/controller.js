@@ -1,4 +1,4 @@
-import {resetMapView,DEFAULT_EXTENT,DEFAULT_HEIGHT_SCALE,rebaseMapView} from "../map/controls.js";
+import {resetMapView,DEFAULT_EXTENT,DEFAULT_HEIGHT_SCALE,rebaseMapView,routeFrame} from "../map/controls.js";
 import {rankPlaces,confidentPlace,groundDistance} from "./places.js";
 import {coordinates,extractRoute,screenPath,pointAt,routeParticles,extractTransit,resolveRouteCommand} from "./routes.js";
 import {providerError,loadAMap} from "./sdk.js";
@@ -238,7 +238,7 @@ export class NavigationController{
   const focus=view==="browse"?this.state.cityFocus:view==="end"?(this.resolved?.destination.location||path.at(-1)):(this.resolved?.origin.location||path[0]);
   // Commit a complete scene atomically. View/route changes retain the last city while loading.
   if(this.state.mapReady||context.buildings?.length){
-   this.state.cityScene={path,context,view,focus,extent,originName:this.resolved?.origin.name,destinationName:this.resolved?.destination.name};this.state.cityRevision=(this.state.cityRevision||0)+1;
+   this.state.cityScene={path,context,view,focus,extent,originName:this.resolved?.origin.name,destinationName:this.resolved?.destination.name};this.updateFrame();this.state.cityRevision=(this.state.cityRevision||0)+1;
    this.state.mapReady=true;
   }
   this.stage.hidden=false;document.body.classList.add("map-active");
@@ -253,7 +253,7 @@ export class NavigationController{
    if(version!==this.requestVersion||!this.isOpen||path!==this.path||view!==this.state.cityView||sceneId!==this.sceneRequestId)return;
    this.currentContext=data;
    this.state.cityScene={path,context:data,view,focus,extent,originName:this.resolved?.origin.name,destinationName:this.resolved?.destination.name};
-   this.state.cityRevision=(this.state.cityRevision||0)+1;this.state.mapReady=true;
+   this.updateFrame();this.state.cityRevision=(this.state.cityRevision||0)+1;this.state.mapReady=true;
    this.progress("ready","路线已就绪，点击左侧方式切换");
    const note=document.getElementById("cityDataNote");
    note.textContent=(view==="overview"||extent>6000)?"全程路网 · 放大加载三维街区 · ":data.buildings?.length?"街区矢量 · 楼高视觉强调 · "+(data.coverage==="partial"?"部分瓦片缺失 · ":""):"楼宇数据暂不可用 · ";
@@ -266,18 +266,23 @@ export class NavigationController{
   }catch(error){
    if(version===this.requestVersion&&this.isOpen&&path===this.path&&view===this.state.cityView&&sceneId===this.sceneRequestId){
     this.state.cityScene={path,context:{},view,focus,extent,originName:this.resolved?.origin.name,destinationName:this.resolved?.destination.name};
-    this.state.cityRevision=(this.state.cityRevision||0)+1;this.state.mapReady=true;
+    this.updateFrame();this.state.cityRevision=(this.state.cityRevision||0)+1;this.state.mapReady=true;
     this.progress("ready","路线已就绪，周边楼宇暂不可用");
     document.getElementById("cityDataNote").textContent="高德真实路线 · 周边城市数据暂不可用";
    }
   }
+ }
+ updateFrame(){
+  const data=this.state.cityScene;if(!data)return;
+  const frame=data.view==="overview"?routeFrame(data.path,data.extent):{origin:data.focus||data.path[0],extent:data.extent};
+  if(!this.state.cityPendingReset)this.state.cityFrame=frame;
  }
  setView(view){
   if(!["start","end","overview"].includes(view))return;
   clearTimeout(this.viewTimer);this.state.cityView=view;this.state.cityFocus=null;resetMapView(this.state);
   for(const button of document.querySelectorAll("[data-city-view]"))button.classList.toggle("selected",button.dataset.cityView===view);
   document.getElementById("cityViewLabel").textContent=view==="overview"?"全程路线 · 含起点与终点":view==="end"?"终点街区 · 三维城市":"起点街区 · 三维城市";
-  if(this.isOpen&&this.path.length)this.showScene(this.path,{},this.requestVersion);
+  if(this.isOpen&&this.path.length)this.showScene(this.path,this.currentContext||{},this.requestVersion);
  }
  requestCityContext(body,sceneId){
   return new Promise((resolve,reject)=>{
@@ -306,8 +311,7 @@ export class NavigationController{
   if(!this.isOpen||!this.path.length||!this.state.cityFrame)return;
   const next=rebaseMapView(this.state,this.state.cityFrame);
   this.state.cityFocus=next.origin;this.state.cityBrowseExtent=next.extent;this.state.cityView="browse";
-  this.state.cityFrame={origin:next.origin,extent:next.extent};
-  this.state.cityPanX=0;this.state.cityPanY=0;this.state.cityZoom=1;
+  this.state.cityPendingReset={panX:this.state.cityPanX||0,panY:this.state.cityPanY||0,zoom:this.state.cityZoom||1};
   for(const button of document.querySelectorAll("[data-city-view]"))button.classList.remove("selected");
   document.getElementById("cityViewLabel").textContent="沿途浏览 · 拖动继续查看";
   this.showScene(this.path,this.currentContext||{},this.requestVersion);

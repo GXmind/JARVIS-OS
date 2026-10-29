@@ -1,13 +1,14 @@
 import {$} from "../core/dom.js";
 export function createSettings({api,message,closeCommand,closeExit,updateWeather,onSaved}){
 const fieldLabels={
+ WAKE_ENABLED:"本机 hi jarvis 唤醒",WAKE_TIMEOUT_SECONDS:"唤醒后等待指令秒数",WAKE_SILENCE_SECONDS:"说完后静音结束秒数",
  API_BASE_URL:"对话 / 云端播报 API 地址",API_MODEL:"对话模型",API_KEY:"对话 / 云端播报密钥",CHAT_MODE:"对话模式",
  ASR_MODE:"语音识别",ASR_BASE_URL:"语音识别 API 地址（独立服务）",ASR_API_KEY:"语音识别密钥（独立服务）",ASR_MODEL:"语音识别模型（录音转文字）",TTS_MODE:"语音播报",TTS_MODEL:"播报模型",TTS_VOICE:"音色",
  INPUT_DEVICE:"输入设备编号（空为系统默认）",OUTPUT_DEVICE:"输出设备编号（空为系统默认）",
  SAMPLE_RATE:"录音采样率",MAX_RECORD_SECONDS:"最长录音秒数",REQUEST_TIMEOUT:"请求超时秒数",AUTO_SPEAK:"自动播报",WEATHER_CITY:"天气城市 / 区县",WEATHER_ADCODE:"天气行政区编码（虎丘区 320505）",
  MAP_VIEW_METERS:"地图街区范围（600–5000 米，下次导航生效）",MAP_HEIGHT_SCALE:"楼高视觉倍率（1–32，下次导航生效）",
  AMAP_JS_KEY:"高德 Web端（JS API）Key",AMAP_SECURITY_JSCODE:"高德安全密钥（securityJsCode）",AMAP_CITY:"地图默认城市",AMAP_DEFAULT_ORIGIN:"常用出发地（请填写具体地址或地点）"};
-const options={CHAT_MODE:[["mock","模拟"],["api","云端 API"]],ASR_MODE:[["off","关闭"],["api","云端 API"]],
+const options={WAKE_ENABLED:[["true","开启"],["false","关闭"]],CHAT_MODE:[["mock","模拟"],["api","云端 API"]],ASR_MODE:[["off","关闭"],["api","云端 API"]],
  TTS_MODE:[["windows","Windows 系统"],["api","云端 API"],["off","关闭"]],AUTO_SPEAK:[["false","关闭"],["true","开启"]]};
 async function openSettings(){
  closeCommand();closeExit();

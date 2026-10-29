@@ -41,6 +41,9 @@ class Settings:
     MAX_RECORD_SECONDS: str = "60"
     REQUEST_TIMEOUT: str = "45"
     AUTO_SPEAK: str = "false"
+    WAKE_ENABLED: str = "true"
+    WAKE_TIMEOUT_SECONDS: str = "8"
+    WAKE_SILENCE_SECONDS: str = "1.0"
     WEATHER_CITY: str = "苏州虎丘区"
     WEATHER_ADCODE: str = "320505"
     AMAP_JS_KEY: str = ""
@@ -61,6 +64,11 @@ class Settings:
         return api_base(self.API_BASE_URL),self.ASR_API_KEY.strip() or self.API_KEY.strip()
 
     def validated(self):
+        if self.WAKE_ENABLED not in ("true","false"):raise ValueError("WAKE_ENABLED 选项无效。")
+        for key,low,high in (("WAKE_TIMEOUT_SECONDS",3,20),("WAKE_SILENCE_SECONDS",.5,2.5)):
+            try:value=float(getattr(self,key))
+            except (TypeError,ValueError):raise ValueError(key+" 必须为数字。") from None
+            if not low<=value<=high:raise ValueError(key+" 超出范围。")
         for key,low,high in (("MAP_VIEW_METERS",600,5000),("MAP_HEIGHT_SCALE",1,32)):
             try:value=float(getattr(self,key))
             except (TypeError,ValueError):raise ValueError(key+" 必须为数字。") from None
