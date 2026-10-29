@@ -24,6 +24,13 @@ class HttpServices:
     hand_status: Callable = lambda: {"ready":False,"message":"手势运行库尚未安装。"}
     hand_asset: Callable = lambda path: None
 
+class _LocalHTTPServer(ThreadingHTTPServer):
+    # Chromium opens parallel module imports and polling connections for both
+    # windows. A backlog of five can drop a module while the accept loop is
+    # briefly busy; keep the loopback burst queue bounded but large enough.
+    request_queue_size=64
+
+
 class DesktopServer:
     def __init__(self,state,services):
         self.services=services
@@ -235,7 +242,7 @@ class DesktopServer:
                 except Exception as exc:
                     LOG.error("space_http_error category=%s",type(exc).__name__)
                     self.respond(500,{"error":"操作失败，请查看 logs 目录。"})
-        self.http=ThreadingHTTPServer(("127.0.0.1",0),Handler)
+        self.http=_LocalHTTPServer(("127.0.0.1",0),Handler)
         self.http.daemon_threads=True
         self.port=self.http.server_port
         self.origin=f"http://127.0.0.1:{self.port}"

@@ -134,3 +134,10 @@ npm test
 ## 自由粒子交互检查
 
 新功能仍不需要 npm 构建或额外绘图框架，使用已提供的 Three.js、Worker、Path2D 和 Windows System.Speech。运行 `scripts/check_center.py` 检查状态形态、自由几何、模型变形、键帧、地图优先级和关闭。默认不调用模型；显式加 `--live-drawing --live-chat --audio` 可做真实接口及播报检查，报告仅留本机。操作和能力边界见 [中心交互](docs/center-actions.md)。
+
+
+## 普通窗口外观
+
+主窗口和独立地图窗口使用 Chromium 暗色窗口模式，并尝试关闭 Windows 11 的亮色系统描边。旧系统不支持相应 DWM 属性时安全回退，保留原生窗口缩放；未改为全屏。网页根节点也声明深色背景，避免加载阶段的白底。更改窗口启动参数后需重启应用。
+
+独立地图首次切换暗色模式时使用 `cache/map-browser-dark`，避免复用旧的亮色浏览器进程；原 `cache/map-browser` 保留，已有独立窗口不因此被关闭，F2 设置仍保存在原配置文件。

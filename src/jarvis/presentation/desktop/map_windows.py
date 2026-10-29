@@ -6,7 +6,7 @@ import threading
 import time
 from jarvis.domain.errors import ServiceError
 from jarvis.infrastructure.system.paths import ROOT
-from jarvis.presentation.desktop.window import browser_path,find_window
+from jarvis.presentation.desktop.window import browser_path,find_window,style_window
 
 MAP_TITLE="JARVIS · 地图"
 
@@ -72,11 +72,14 @@ class MapWindows:
             try:
                 handle=find_map_window(origin,include_hidden=True)
                 if not handle:
-                    profile=ROOT/"cache/map-browser";profile.mkdir(parents=True,exist_ok=True)
+                    # Dark mode is a process-wide Chromium flag. A separate profile
+                    # avoids reusing an older light-mode map process while its
+                    # independently owned windows may still be open.
+                    profile=ROOT/"cache/map-browser-dark";profile.mkdir(parents=True,exist_ok=True)
                     startup=subprocess.STARTUPINFO();startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW;startup.wShowWindow=0
                     subprocess.Popen([str(browser_path()),"--app="+origin+"/map","--user-data-dir="+str(profile),
                         "--disk-cache-dir="+str(profile/"disk-cache"),"--crash-dumps-dir="+str(ROOT/"tmp"),
-                        "--no-first-run","--disable-background-mode","--window-size=1280,820","--window-position=-32000,-32000",
+                        "--no-first-run","--no-default-browser-check","--disable-extensions","--disable-session-crashed-bubble","--disable-background-mode","--force-dark-mode","--window-size=1280,820","--window-position=-32000,-32000",
                         "--disable-background-timer-throttling","--disable-renderer-backgrounding","--disable-features=CalculateNativeWinOcclusion"],
                         cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,startupinfo=startup)
                     deadline=time.monotonic()+18
@@ -85,6 +88,7 @@ class MapWindows:
                             if self.closed or generation!=self.generation:return
                         time.sleep(.1);handle=find_map_window(origin,include_hidden=True)
                 if not handle:raise ServiceError("独立地图窗口未能打开。")
+                style_window(handle)
                 with self.lock:
                     if self.closed or generation!=self.generation:
                         self._close(handle);return

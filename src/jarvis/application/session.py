@@ -140,7 +140,7 @@ class DesktopState:
             elif not map_config(settings)["configured"]:
                 answer="已收到地图请求。高德地图尚未配置；请在 F2 设置中填写 JS API Key 和配套安全密钥。"
             elif navigation["action"]=="route":
-                answer="正在为您查询高德路线，中心能量体会在地图加载后展开。"
+                answer="正在为您查询路线。"
             else:
                 answer="正在打开高德地图。"
             self.store.add_message(self.sid,"assistant",answer)

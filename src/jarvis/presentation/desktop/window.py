@@ -62,8 +62,14 @@ def style_window(handle):
     user.SetWindowLongW(handle,-16,style & ~0x00C00000)
     user.SetWindowPos(handle,None,0,0,0,0,0x0027)
     try:
-        dark=C.c_int(1)
-        C.windll.dwmapi.DwmSetWindowAttribute(handle,20,C.byref(dark),C.sizeof(dark))
+        dwm=C.windll.dwmapi
+        dwm.DwmSetWindowAttribute.argtypes=[W.HWND,W.DWORD,C.c_void_p,W.DWORD]
+        # Chromium draws part of its own frame; --force-dark-mode handles it.
+        # Windows 11 additionally supports suppressing the DWM outline. Older
+        # systems return E_INVALIDARG and keep the normal resizable frame.
+        for attribute,value in ((20,1),(34,0xFFFFFFFE),(35,0x00100703)):
+            color=W.DWORD(value)
+            dwm.DwmSetWindowAttribute(handle,attribute,C.byref(color),C.sizeof(color))
     except Exception:
         pass
 
@@ -79,7 +85,7 @@ def run(state,server,config_error=None):
         command=[str(browser_path()),"--app="+server.origin,
                  "--user-data-dir="+str(profile),"--disk-cache-dir="+str(profile/"disk-cache"),
                  "--crash-dumps-dir="+str(ROOT/"tmp"),"--no-first-run","--no-default-browser-check",
-                 "--disable-background-mode","--disable-extensions","--disable-session-crashed-bubble",
+                 "--disable-background-mode","--force-dark-mode","--disable-extensions","--disable-session-crashed-bubble",
                  "--disable-features=msEdgeSidebarV2,msEdgeShoppingAssistant",
                  "--window-size=1380,840","--window-position=100,70"]
         process=subprocess.Popen(command,cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

@@ -41,7 +41,8 @@ export function createVisual(canvas,state,metrics){
  camera.position.set(0,.05,6.8);camera.lookAt(0,0,0);
  const particleCity=createParticleCity(THREE,scene,camera),assembly=createAssembly(THREE),center=state.mapOnly?{update:()=>0,close(){}}:createCenter(THREE,scene);
  const uniforms={uTime:{value:0},uPhase:{value:0},uLevel:{value:0},uDpr:{value:1},uMapMix:{value:0},uActivity:{value:0},uCoreFade:{value:1}};
- const ribbons=new THREE.Group();scene.add(ribbons);const geometry=makeRibbonGeometry();
+ const energy=new THREE.Group();scene.add(energy);
+ const ribbons=new THREE.Group();energy.add(ribbons);const geometry=makeRibbonGeometry();
  for(let i=0;i<6;i++){
   const material=new THREE.ShaderMaterial({uniforms:{...uniforms,uSeed:{value:i}},vertexShader:meshVertex,
    fragmentShader:meshFragment,side:THREE.DoubleSide,transparent:true,depthWrite:false,
@@ -49,7 +50,7 @@ export function createVisual(canvas,state,metrics){
   const mesh=new THREE.Mesh(geometry,material);mesh.frustumCulled=false;ribbons.add(mesh);
  }
  const layers=[makePoints(3600,0,uniforms),makePoints(10500,1,uniforms),makePoints(3600,2,uniforms),makePoints(600,3,uniforms)];
- for(const layer of layers)scene.add(layer);
+ for(let i=0;i<layers.length;i++)(i===1||i===2?energy:scene).add(layers[i]);
  const threads=[];
  for(let i=0;i<125;i++){
   const x=Math.sin(i*117.13)*2.2,z=Math.cos(i*41.7)*.9,y=Math.sin(i*17.9)*2.1;
@@ -66,7 +67,7 @@ export function createVisual(canvas,state,metrics){
   const g=new THREE.BufferGeometry().setFromPoints(pts);
   const m=new THREE.LineBasicMaterial({color:k===3?0xeaa5d9:0xb2a9ef,transparent:true,opacity:k===3?.16:.20,
    depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false});
-  const orbit=new THREE.Line(g,m);orbit.rotation.set(.24+k*.36,k*.28,k*.39);scene.add(orbit);orbits.push(orbit);
+  const orbit=new THREE.Line(g,m);orbit.rotation.set(.24+k*.36,k*.28,k*.39);energy.add(orbit);orbits.push(orbit);
  }
  const targetType=gl.getExtension("EXT_color_buffer_float")?THREE.HalfFloatType:THREE.UnsignedByteType;
  metrics.hdr=targetType===THREE.HalfFloatType;
@@ -121,6 +122,14 @@ export function createVisual(canvas,state,metrics){
   for(const orbit of orbits)orbit.visible=!state.mapOnly&&mapMix<.95&&centerMix<.8;
   ribbons.visible=!state.mapOnly&&centerMix<.999;
   for(let i=1;i<layers.length;i++)layers[i].visible=!state.mapOnly&&centerMix<.999;
+  // Idle motion uses the render clock, never voice level or task progress. Fade it
+  // out before dedicated map/model forms so their coordinates remain stable.
+  const idleWeight=Math.max(0,1-uniforms.uActivity.value)*(1-THREE.MathUtils.smoothstep(mapMix,0,.25))*(1-centerMix);
+  const breath=1+.045*Math.sin(elapsed*Math.PI/2.6)*idleWeight;
+  energy.scale.setScalar(breath);
+  energy.rotation.set(Math.sin(elapsed*.27)*.065*idleWeight,Math.sin(elapsed*.13)*.75*idleWeight,Math.sin(elapsed*.22)*.09*idleWeight);
+  metrics.energyTime=Number(elapsed.toFixed(3));metrics.idleBreath=Number(breath.toFixed(5));metrics.idleWeight=Number(idleWeight.toFixed(3));
+  metrics.energyRotation=energy.rotation.toArray().slice(0,3);
   uniforms.uTime.value=elapsed;uniforms.uPhase.value=phase;uniforms.uLevel.value=level;ribbons.rotation.z=Math.sin(elapsed*.08)*.055;
   for(let i=0;i<orbits.length;i++)orbits[i].rotation.z+=dt*(i%2?.016:-.012);
   renderer.info.reset();renderer.setRenderTarget(sceneTarget);renderer.render(scene,camera);

@@ -5,7 +5,7 @@ import tempfile,threading,time,unittest
 from jarvis.infrastructure.system.paths import ROOT
 from jarvis.domain.settings import Settings
 from jarvis.bootstrap import create_state, create_server
-from jarvis.presentation.desktop.window import run
+from jarvis.presentation.desktop.window import run,style_window
 from jarvis.infrastructure.persistence.sqlite import Store
 
 class MapStabilityTests(unittest.TestCase):
@@ -27,6 +27,31 @@ class MapStabilityTests(unittest.TestCase):
     self.assertEqual(run(state,server),0)
   self.assertEqual(event.calls,4,"An old heartbeat must not terminate a live window")
   server.close.assert_called_once()
+
+ def test_dark_border_preserves_native_resize_and_tolerates_older_windows(self):
+  import ctypes
+  user=MagicMock();user.GetWindowLongW.return_value=0x00CF0000
+  dwm=MagicMock();dwm.DwmSetWindowAttribute.return_value=-2147024809
+  with patch.object(ctypes,"windll",SimpleNamespace(user32=user,dwmapi=dwm)):
+   style_window(123)
+  styled=user.SetWindowLongW.call_args.args[2]
+  self.assertFalse(styled&0x00C00000)
+  self.assertTrue(styled&0x00040000,"Keep the native resize frame; this is a normal window")
+  self.assertEqual([c.args[1] for c in dwm.DwmSetWindowAttribute.call_args_list],[20,34,35])
+  user.SetWindowPos.assert_called_once_with(123,None,0,0,0,0,0x0027)
+
+ def test_startup_burst_can_queue_resources_for_two_windows(self):
+  import socket
+  with tempfile.TemporaryDirectory(dir=ROOT/"tmp") as folder:
+   state=create_state(Settings(TTS_MODE="off"),Store(Path(folder)/"burst.sqlite3"))
+   server=create_server(state);connections=[]
+   try:
+    # Queue before accepting, simulating a busy main thread during two-window
+    # startup. The old default backlog of five refuses/drops later imports.
+    for _ in range(16):connections.append(socket.create_connection(("127.0.0.1",server.port),timeout=.6))
+   finally:
+    for connection in connections:connection.close()
+    server.start();server.close()
 
  def test_worker_owns_audio_until_it_has_stopped(self):
   with tempfile.TemporaryDirectory(dir=ROOT/"tmp") as folder:

@@ -59,6 +59,18 @@ state._speak_answer=lambda answer,settings:state.notify(answer)
 report={"ok":False,"cloud_calls":False,"checks":[],"models":[]};folder=ROOT/"logs/center-preview";folder.mkdir(exist_ok=True)
 try:
  b=Browser(server.origin);b.wait("window.__sceneMetrics?.ready&&!!window.__navigation",25)
+ # Verify motion in the idle core itself, not only moving background stars.
+ b.wait("window.__sceneMetrics.visualActivity==='idle'&&window.__sceneMetrics.idleWeight===1",6)
+ before=b.cdp.evaluate("JSON.parse(JSON.stringify(window.__sceneMetrics))")
+ b.cdp.screenshot(folder/"idle_motion_before.png");time.sleep(1.6)
+ after=b.cdp.evaluate("JSON.parse(JSON.stringify(window.__sceneMetrics))")
+ b.cdp.screenshot(folder/"idle_motion_after.png")
+ assert after["frames"]>before["frames"]+3 and after["energyTime"]>before["energyTime"]+.5,(before,after)
+ assert abs(after["idleBreath"]-before["idleBreath"])>.002,(before,after)
+ assert sum(abs(a-c) for a,c in zip(before["energyRotation"],after["energyRotation"]))>.015
+ assert after["mapMix"]==0 and not state.busy and after["visualActivity"]=="idle"
+ report["idle_motion"]={"elapsed":after["energyTime"]-before["energyTime"],"frames":after["frames"]-before["frames"],"breath":[before["idleBreath"],after["idleBreath"]],"rotation":[before["energyRotation"],after["energyRotation"]]}
+ report["checks"].append("continuous idle breathing and circulation without a task or audio level")
  for activity in ("idle","listening","transcribing","thinking","speaking","modeling"):
   state.busy=activity!="idle";state.activity=activity
   b.wait("window.__sceneMetrics.visualActivity==='"+activity+"'",6);time.sleep(.5);b.cdp.screenshot(folder/(activity+".png"))
