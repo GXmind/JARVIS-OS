@@ -1,5 +1,5 @@
 import {DEFAULT_HEIGHT_SCALE} from "../features/map/controls.js";
-import {buildCityPositions} from "./city_geometry.js";
+import {CityBuilder} from "./city_builder.js";
 export * from "./city_geometry.js";
 export function createParticleCity(THREE,scene,camera=null){
  const group=new THREE.Group();scene.add(group);group.visible=false;
@@ -79,7 +79,8 @@ export function createParticleCity(THREE,scene,camera=null){
  const dustG=new THREE.BufferGeometry(),dustM=pointsMaterial(1.35),dust=new THREE.Points(dustG,dustM);group.add(dust);dust.visible=false;
  let dustRevision=null;
  const labelGroup=new THREE.Group();group.add(labelGroup);
- let revision=-1,built=null,lastBudget=0;
+ const builder=new CityBuilder();
+ let revision=-1,built=null,lastBudget=0,requestedRevision=null,requestedBudget=0,job=0,committedJob=0;
  function attributes(g,positions,colors,fades){
   const count=positions.length/3;
   if(!g.getAttribute("position")||g.getAttribute("position").count<count){
@@ -119,12 +120,20 @@ export function createParticleCity(THREE,scene,camera=null){
   }
   attr.needsUpdate=true;
  }
- return {hide(){group.visible=false;},update(state,mix,time,metrics,transfer={active:false,flight:0,direction:{x:1,y:0}}){
+ return {close(){builder.close();},hide(){group.visible=false;},update(state,mix,time,metrics,transfer={active:false,flight:0,direction:{x:1,y:0}}){
   const data=state.cityScene;
   const budget=state.cityParticleBudget||36000;
-  if(data&&(state.cityRevision!==revision||budget!==lastBudget)){
-   lastBudget=budget;
-   revision=state.cityRevision;built=buildCityPositions(data.context||{},data.path||[],data.view||"start",data.focus||null,{extent:data.extent,heightScale:DEFAULT_HEIGHT_SCALE,particleBudget:budget});
+  if(data&&(state.cityRevision!==requestedRevision||budget!==requestedBudget)){
+   requestedRevision=state.cityRevision;requestedBudget=budget;job=builder.request(data,budget,state.cityRevision);
+  }
+  metrics.cityGeometryPending=!!data&&(state.cityRevision!==revision||budget!==lastBudget);
+  if(builder.error){metrics.cityBuildError=builder.error;}
+  const pending=state.cityPendingReset;
+  const canCommit=!pending||(Math.abs((state.cityPanX||0)-pending.panX)<1e-6&&Math.abs((state.cityPanY||0)-pending.panY)<1e-6&&Math.abs((state.cityZoom||1)-pending.zoom)<1e-6);
+  if(data&&builder.result?.id===job&&builder.result.built&&job!==committedJob&&canCommit){
+   committedJob=job;lastBudget=budget;revision=state.cityRevision;built=builder.result.built;
+   if(pending){state.cityPanX=0;state.cityPanY=0;state.cityZoom=1;delete state.cityPendingReset;}
+   metrics.cityBuildMs=builder.result.milliseconds;metrics.cityBuildRevision=revision;metrics.cityGeometryPending=false;
    attributes(geometry,built.points,built.colors,built.fades);
    lines(edgeG,built.edges);lines(streetsG,built.streets||[]);lines(arterialG,built.arterials||[]);
    lines(pathG,built.paths||[]);dashedDistances(pathG);
@@ -160,7 +169,7 @@ export function createParticleCity(THREE,scene,camera=null){
     markers.push(x,0,z,x,.18,z);
    }
    lines(pinsG,markers);
-   attributes(routeG,built.route.flat(),built.route.flatMap(()=>[.06,.95,.30]),built.route.map(()=>1));
+   attributes(routeG,built.routePositions,built.routeColors,built.routeFades);
    metrics.cityBuildings=built.renderedBuildings;
    metrics.cityRoads=data.context?.roads?.length||0;metrics.citySource=data.context?.status||"loading";
    metrics.cityRoutePoints=built.route.length;metrics.cityExtentMeters=built.extent;metrics.cityView=data.view||"start";
@@ -170,6 +179,7 @@ export function createParticleCity(THREE,scene,camera=null){
    metrics.cityTileZoom=data.context?.tile_zoom||null;metrics.cityLabels=built.labels.length;
    metrics.cityEndpointCount=endpointLabels.length;metrics.cityFullRouteSegments=(built.fullLine||[]).length/6;
   }
+  metrics.cityGeometryReady=!!built&&revision===state.cityRevision&&budget===lastBudget;
   group.visible=!!built&&mix>.001;if(!group.visible)return;
   const dprNow=metrics.pixelRatio||1,w=metrics.resolution[0]/dprNow,h=metrics.resolution[1]/dprNow;
   const left=document.querySelector(".left-rail")?.getBoundingClientRect().right||w*.20;
@@ -178,15 +188,7 @@ export function createParticleCity(THREE,scene,camera=null){
   else viewport.value.set((left+18)*dprNow,h*(state.mapOnly?.25:.28)*dprNow,(right-18)*dprNow,h*(state.mapOnly?.85:.76)*dprNow);
   dust.visible=transfer.active;
   if(transfer.active&&dustRevision!==revision){
-   dustRevision=revision;const positions=[];
-   for(const array of [built.streets||[],built.arterials||[],built.paths||[],built.edges||[],built.fullLine||[]]){
-    for(let i=0;i+5<array.length&&positions.length<36000;i+=6){
-     const length=Math.hypot(array[i+3]-array[i],array[i+4]-array[i+1],array[i+5]-array[i+2]);
-     const count=Math.min(8,Math.max(1,Math.ceil(length/.025)));
-     for(let j=0;j<count&&positions.length<36000;j++)for(let k=0;k<3;k++)positions.push(array[i+k]+(array[i+3+k]-array[i+k])*j/count);
-    }
-   }
-   attributes(dustG,positions,Array(positions.length/3).fill([.55,.80,.95]).flat(),Array(positions.length/3).fill(1));
+   dustRevision=revision;attributes(dustG,built.dustPositions,built.dustColors,built.dustFades);
   }
   metrics.cityViewport={left:left+18,right:right-18,top:h*.24,bottom:h*.72};
   state.cityFrame={origin:built.origin,extent:built.extent};

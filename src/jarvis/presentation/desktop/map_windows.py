@@ -26,7 +26,7 @@ def displays():
     user.EnumDisplayMonitors(None,None,visit,0)
     return result
 
-def find_map_window(origin=None):
+def find_map_window(origin=None,include_hidden=False):
     user=C.windll.user32;found=[]
     user.GetWindowTextW.argtypes=[W.HWND,W.LPWSTR,C.c_int]
     user.IsWindowVisible.argtypes=[W.HWND]
@@ -34,7 +34,7 @@ def find_map_window(origin=None):
     @callback
     def visit(handle,param):
         title=C.create_unicode_buffer(256);user.GetWindowTextW(handle,title,256)
-        if user.IsWindowVisible(handle) and title.value.startswith(MAP_TITLE if origin is None else MAP_TITLE+" · "+origin.rsplit(":",1)[-1]):found.append(handle)
+        if (include_hidden or user.IsWindowVisible(handle)) and title.value.startswith(MAP_TITLE if origin is None else MAP_TITLE+" · "+origin.rsplit(":",1)[-1]):found.append(handle)
         return True
     user.EnumWindows(visit,0)
     return found[0] if found else None
@@ -56,7 +56,7 @@ def choose_display(items,target=None,direction=None,source_id=None):
 
 class MapWindows:
     def __init__(self):
-        self.lock=threading.RLock();self.generation=0;self.handle=None;self.closed=False;self.error="";self.worker=None;self.origin=None;self.missing_since=None
+        self.lock=threading.RLock();self.generation=0;self.handle=None;self.closed=False;self.error="";self.worker=None;self.origin=None;self.missing_since=None;self.target=None;self.visible=False
     def displays(self):return displays()
     def open(self,origin,target=None,direction=None):
         items=displays();source_id=None;handle=find_window()
@@ -67,33 +67,31 @@ class MapWindows:
                 if items:source_id=max(items,key=overlap)["id"]
         selected=choose_display(items,target,direction,source_id)
         with self.lock:
-            self.closed=False;self.generation+=1;generation=self.generation;self.error="";self.origin=origin;self.missing_since=None
+            self.closed=False;self.generation+=1;generation=self.generation;self.error="";self.origin=origin;self.missing_since=None;self.target=selected;self.visible=False
         def launch():
             try:
-                handle=find_map_window(origin)
+                handle=find_map_window(origin,include_hidden=True)
                 if not handle:
-                    profile=ROOT/"cache/space-browser";profile.mkdir(parents=True,exist_ok=True)
+                    profile=ROOT/"cache/map-browser";profile.mkdir(parents=True,exist_ok=True)
+                    startup=subprocess.STARTUPINFO();startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW;startup.wShowWindow=0
                     subprocess.Popen([str(browser_path()),"--app="+origin+"/map","--user-data-dir="+str(profile),
                         "--disk-cache-dir="+str(profile/"disk-cache"),"--crash-dumps-dir="+str(ROOT/"tmp"),
-                        "--no-first-run","--disable-background-mode","--window-size=1280,820"],
-                        cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                        "--no-first-run","--disable-background-mode","--window-size=1280,820","--window-position=-32000,-32000",
+                        "--disable-background-timer-throttling","--disable-renderer-backgrounding","--disable-features=CalculateNativeWinOcclusion"],
+                        cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,startupinfo=startup)
                     deadline=time.monotonic()+18
                     while not handle and time.monotonic()<deadline:
                         with self.lock:
                             if self.closed or generation!=self.generation:return
-                        time.sleep(.1);handle=find_map_window(origin)
+                        time.sleep(.1);handle=find_map_window(origin,include_hidden=True)
                 if not handle:raise ServiceError("独立地图窗口未能打开。")
                 with self.lock:
                     if self.closed or generation!=self.generation:
                         self._close(handle);return
                     self.handle=handle
-                user=C.windll.user32
-                user.SetWindowPos.argtypes=[W.HWND,W.HWND,C.c_int,C.c_int,C.c_int,C.c_int,W.UINT]
-                user.ShowWindow.argtypes=[W.HWND,C.c_int];user.ShowWindow(handle,9)
-                width=max(640,int(selected["width"]*.92));height=max(480,int(selected["height"]*.90))
-                width=min(selected["width"],width);height=min(selected["height"],height)
-                user.SetWindowPos(handle,None,selected["left"]+(selected["width"]-width)//2,
-                    selected["top"]+(selected["height"]-height)//2,width,height,0x0040)
+                # Keep the prepared browser off all monitors until the source has dispatched its particles.
+                user=C.windll.user32;user.SetWindowPos.argtypes=[W.HWND,W.HWND,C.c_int,C.c_int,C.c_int,C.c_int,W.UINT]
+                user.SetWindowPos(handle,None,-32000,-32000,min(selected["width"],1280),min(selected["height"],820),0x0014)
             except Exception as exc:
                 with self.lock:self.error=str(exc) if isinstance(exc,ServiceError) else "独立地图窗口启动失败。"
         self.worker=threading.Thread(target=launch,daemon=True,name="jarvis-map-window");self.worker.start()
@@ -103,15 +101,27 @@ class MapWindows:
         length=max(1,(dx*dx+dy*dy)**.5)
         vector={"x":dx/length,"y":-dy/length} if dx or dy else {"x":0 if direction in ("up","down") else -1 if direction=="left" else 1,"y":1 if direction=="up" else -1 if direction=="down" else 0}
         return {"display":selected,"multiple_displays":len(items)>1,"direction":vector}
+    def reveal(self):
+        with self.lock:
+            handle=find_map_window(self.origin,include_hidden=True) if self.origin else None
+            if handle:self.handle=handle
+            if not self.handle or not self.target:raise ServiceError("目标屏幕尚未准备好。")
+            m=self.target;user=C.windll.user32
+            user.SetWindowPos.argtypes=[W.HWND,W.HWND,C.c_int,C.c_int,C.c_int,C.c_int,W.UINT]
+            user.ShowWindow.argtypes=[W.HWND,C.c_int];user.ShowWindow(self.handle,9)
+            width=min(m["width"],max(640,int(m["width"]*.92)));height=min(m["height"],max(480,int(m["height"]*.90)))
+            user.SetWindowPos(self.handle,None,m["left"]+(m["width"]-width)//2,m["top"]+(m["height"]-height)//2,width,height,0x0040)
+            self.visible=True
+
     def status(self):
         with self.lock:
             user=C.windll.user32;user.IsWindow.argtypes=[W.HWND]
             if self.handle and not user.IsWindow(self.handle):
-                replacement=find_map_window(self.origin)
+                replacement=find_map_window(self.origin,include_hidden=True)
                 if replacement:self.handle=replacement;self.missing_since=None
                 elif self.missing_since is None:self.missing_since=time.monotonic()
             else:self.missing_since=None
-            return {"error":self.error,"closed":self.missing_since is not None and time.monotonic()-self.missing_since>2}
+            return {"visible":self.visible,"error":self.error,"closed":self.missing_since is not None and time.monotonic()-self.missing_since>2}
     @staticmethod
     def _close(handle):
         user=C.windll.user32;user.PostMessageW.argtypes=[W.HWND,W.UINT,W.WPARAM,W.LPARAM]
@@ -119,5 +129,5 @@ class MapWindows:
     def close(self):
         with self.lock:
             self.closed=True;self.generation+=1;handle=self.handle;self.handle=None
-        if self.origin:handle=find_map_window(self.origin) or handle
+        if self.origin:handle=find_map_window(self.origin,include_hidden=True) or handle
         if handle:self._close(handle)

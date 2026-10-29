@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import {CityBuilder} from "../src/jarvis/presentation/web/assets/rendering/city_builder.js";
+const jobs=[];const worker={postMessage:job=>jobs.push(job),terminate(){this.terminated=true;}};
+const b=new CityBuilder(()=>worker);const scene={path:[],context:{buildings:[]}};
+b.request(scene,1000,1);b.request(scene,1000,2);b.request(scene,1000,3);
+assert.equal(jobs.length,1);worker.onmessage({data:{id:1,built:{},revision:1}});
+assert.equal(b.result,null);assert.equal(jobs.length,2);assert.equal(jobs[1].revision,3);
+worker.onmessage({data:{id:3,built:{points:new Float32Array([1,2,3])},revision:3}});
+assert.equal(b.result.revision,3);assert.equal(b.inflight,false);b.close();assert(worker.terminated);
+console.log("City worker keeps one job and latest pending viewport; stale results cannot replace current geometry.");

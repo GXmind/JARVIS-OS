@@ -16,22 +16,23 @@ let engine=new HandInterpreter();assert.deepEqual(engine.update([hand("pinch")],
 engine.update([hand("pinch")],220);let actions=[];
 for(let i=1;i<12;i++)actions.push(...engine.update([hand("pinch",-i*.01)],220+i*100));
 assert(actions.some(a=>a.type==="pan"&&a.dx>0));assert(actions.every(a=>!a.dx||Math.abs(a.dx)<=.06));
-assert(engine.update([],1500).some(a=>a.type==="end"));assert.deepEqual(engine.update([],1600),[]);
+assert.deepEqual(engine.update([],1500),[],"Brief tracking dropout is tolerated");assert(engine.update([],1730).some(a=>a.type==="end"));assert.deepEqual(engine.update([],1800),[]);
 engine=new HandInterpreter();engine.update([hand("point")],0);engine.update([hand("point")],220);
 assert(engine.update([hand("point",-.04,.03)],320).some(a=>a.type==="orbit"&&a.dy>0));
 engine=new HandInterpreter();engine.update([hand("pinch",-.14),hand("pinch",.14)],0);engine.update([hand("pinch",-.14),hand("pinch",.14)],220);
 assert(engine.update([hand("pinch",-.19),hand("pinch",.19)],320).some(a=>a.type==="zoom"&&a.factor>1));
 assert(engine.update([hand("pinch",-.11),hand("pinch",.11)],420).some(a=>a.type==="zoom"&&a.factor<1));
 engine=new HandInterpreter();engine.update([hand()],0);engine.update([hand()],200);
-assert.deepEqual(engine.update([hand("open",-.3)],300),[],"Fast unarmed swipes must not split the screen");
-engine=new HandInterpreter();engine.update([hand()],0);
-for(let t=100;t<=800;t+=100)assert.deepEqual(engine.update([hand()],t),[]);
-assert(engine.update([hand("open",-.25)],900).some(a=>a.type==="handoff"&&a.direction==="right"));
-assert(!engine.update([hand("open",.25)],1200).some(a=>a.type==="handoff"),"Handoff has a cooldown");
-assert.deepEqual(engine.update([hand("pinch")],2400),[],"Tracking gap must reset anchors");
-console.log("Pinch pan, index orbit, two-hand zoom, clutch dwell, release, tracking loss and deliberate handoff passed.");
-for(const [dy,direction]of [[.26,"down"],[-.26,"up"]]){
- const e=new HandInterpreter();for(let time=0;time<=800;time+=100)e.update([hand()],time);
- assert(e.update([hand("open",0,dy)],900).some(a=>a.type==="handoff"&&a.direction===direction));
+assert.deepEqual(engine.update([hand("open",-.3)],300),[],"A one-frame landmark jump cannot transfer");
+for(const [dx,dy,direction]of [[-.27,0,"right"],[.27,0,"left"],[0,.27,"down"],[0,-.27,"up"]]){
+ const e=new HandInterpreter();let result=[];
+ for(let i=0;i<=6;i++)result.push(...e.update([hand("open",dx*i/6,dy*i/6)],i*70));
+ assert(result.some(a=>a.type==="handoff"&&a.direction===direction),direction+" natural swipe");
+ assert(!e.update([hand("open",-dx,-dy)],600).some(a=>a.type==="handoff"),"Transfer cooldown");
 }
-console.log("Transfer swipe supports screen directions left/right/up/down.");
+const base=hand("open"),rotated=base.map(p=>({x:.5+(p.x-.5)*.5-(p.y-.5)*.866,y:.5+(p.x-.5)*.866+(p.y-.5)*.5,z:0}));
+assert(classifyHand(rotated).open,"Open palm recognition is rotation invariant");
+const e=new HandInterpreter();let result=[];
+for(let i=0;i<12;i++)result.push(...e.update([hand("open",i%2?.03:0)],i*70));
+assert(!result.some(a=>a.type==="handoff"),"Small stationary jitter cannot transfer");
+console.log("Joint poses, pinch/orbit/zoom, dropout grace, natural four-direction swipes, jump rejection and cooldown passed.");

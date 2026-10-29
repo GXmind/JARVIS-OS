@@ -44,6 +44,7 @@ class DesktopState:
         self.counts_updated=0.0
         self.navigation=NavigationBridge()
         self.map_workspace=MapWorkspace()
+        self.wake=None
 
     def notify(self,text,error=False,seconds=18):
         with self.lock:
@@ -61,6 +62,7 @@ class DesktopState:
                 self.counts_updated=time.monotonic()
             return {
                 "navigation":self.navigation.snapshot(),"presenting":self.presenting,
+                "wake":self.wake.snapshot() if self.wake else {"state":"disabled","phrase":"hi jarvis","local_only":True},
                 "telemetry":self.telemetry.sample(),
                 "counts":dict(self.counts),
                 "modules":{"asr":self.settings.ASR_MODE,"tts":self.settings.TTS_MODE,"model":self.settings.API_MODEL},
@@ -83,6 +85,7 @@ class DesktopState:
             self.kind=kind
             self.activity="thinking" if kind=="reply" else "listening" if kind=="record" else "speaking"
             self.dialogue_until=time.monotonic()+20
+        if self.wake:self.wake.pause()
         def worker():
             try:
                 fn()
@@ -98,6 +101,7 @@ class DesktopState:
                     self.kind=""
                     self.dialogue_until=time.monotonic()+8
                     self.worker_threads.discard(threading.current_thread())
+                if self.wake:self.wake.resume()
         thread=threading.Thread(target=worker,daemon=True,name="jarvis-space-"+kind)
         with self.lock:self.worker_threads.add(thread)
         thread.start()
@@ -206,6 +210,32 @@ class DesktopState:
                 self.notify("录音已保存。按 Enter 输入文字，或按 F2 配置语音识别。",seconds=12)
         self.dispatch("record",worker)
 
+    def start_voice(self):
+        if self.services.wake_factory and not self.wake:
+            self.wake=self.services.wake_factory(audio=self.audio,settings_provider=lambda:self.settings,
+                on_wake=self.wake_detected,can_listen=lambda:not self.busy and not self.presenting and not self.closed.is_set())
+            self.wake.start()
+
+    def set_wake(self,enabled):
+        if not isinstance(enabled,bool):raise ServiceError("唤醒开关格式无效。")
+        self.config_save({"WAKE_ENABLED":"true" if enabled else "false"})
+
+    def wake_detected(self):
+        settings=self.settings
+        if settings.ASR_MODE!="api":
+            self.notify("已听到 hi jarvis。请先在 F2 配置语音识别，再说出指令。",True,10);return
+        def command():
+            self.audio.prepare();self.audio.wake_chime(settings)
+            self.notify("我在，请说您的指令。",seconds=20)
+            self.last_record=self.audio.command_recording(settings)
+            if self.last_record is None:self.notify("没有听到指令，已回到唤醒待机。",seconds=6);return
+            self.activity="thinking"
+            text=self.services.cloud_factory(settings).transcribe(self.last_record).strip()
+            if not text:self.notify("没有识别到有效指令，请再说 hi jarvis。",seconds=8);return
+            self._reply(text,settings)
+        try:self.dispatch("record",command)
+        except ServiceError:pass
+
     def config_public(self):
         values=asdict(self.settings)
         for secret in SECRET_FIELDS:
@@ -233,12 +263,14 @@ class DesktopState:
             self.weather.reset(candidate.WEATHER_CITY)
             if candidate.AMAP_DEFAULT_ORIGIN and self.navigation.pending:
                 self.navigation.accept("开始导航",candidate.AMAP_CITY,candidate.AMAP_DEFAULT_ORIGIN)
+        if self.wake:self.wake.pause();self.wake.resume()
         self.notify("设置已保存。",seconds=5)
 
 
     def close(self):
         """Stop workers before releasing their audio resources."""
         self.closed.set()
+        if self.wake:self.wake.close()
         self.audio.stop()
         self.wait_workers(2.0)
         self.audio.close()

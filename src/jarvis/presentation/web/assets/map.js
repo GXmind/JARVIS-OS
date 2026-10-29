@@ -3,7 +3,7 @@ import {createVisual} from "./rendering/energy.js";
 import {NavigationController} from "./features/navigation/controller.js";
 import {bindMapControls,orbitView,panView,zoomView} from "./features/map/controls.js";
 const $=id=>document.getElementById(id),api=createClient(window.JARVIS_TOKEN);
-const state={phase:"initial",level:0,mapOnly:true,mapReady:false},metrics=window.__sceneMetrics={frames:0,ready:false};
+const state={phase:"initial",level:0,mapOnly:true,mapReady:false,forceRender:true,mapPreparing:true},metrics=window.__sceneMetrics={frames:0,ready:false};
 const message=text=>{$("replicaStatus").textContent=text;};
 const n=window.__navigation=new NavigationController({api,state,message,openSettings:()=>message("连接和语音设置位于主窗口。")});
 window.__mapReplica={state,metrics,navigation:n};
@@ -18,7 +18,7 @@ function receive(snapshot,direction){
  n.isOpen=true;n.panel.hidden=false;n.stage.hidden=false;document.body.classList.add("map-open","map-active");
  for(const [id,text]of Object.entries(snapshot.labels||{}))if($(id))$(id).textContent=text;
  n.renderOptions();n.updateFrame();$("cityHeight").value=state.cityHeightScale||16;$("cityHeightValue").textContent="×"+(state.cityHeightScale||16);
- state.mapTransfer={phase:"arrive",started:performance.now()+120,duration:2200,direction:{x:-(direction?.x??1),y:-(direction?.y??0)}};
+ state.incomingDirection={x:-(direction?.x??1),y:-(direction?.y??0)};state.mapPreparing=true;state.mapTransfer=null;document.body.classList.add("transfer-staging");document.body.classList.remove("assembled-ui");
 }
 function cameraAction(action){
  if(!state.mapReady)return;
@@ -32,7 +32,13 @@ async function poll(){
  try{
   const data=await api("map/workspace?since="+revision+"&after="+after);epoch=data.epoch;
   if(data.requested&&data.snapshot){receive(data.snapshot,data.direction);revision=data.transfer_revision;after=0;}
-  if(data.requested&&state.mapReady&&metrics.ready&&readyEpoch!==epoch){await api("map/ready",{epoch,revision});readyEpoch=epoch;}
+  if(data.requested&&state.mapReady&&metrics.ready&&metrics.cityGeometryReady&&readyEpoch!==epoch){await api("map/ready",{epoch,revision});readyEpoch=epoch;}
+  if(data.stage==="in_transit"&&(!state.mapTransfer||state.mapTransfer.phase!=="arrive")){
+   await api("map/arrive",{epoch});state.mapPreparing=false;document.body.classList.remove("transfer-staging");
+   state.mapTransfer={phase:"arrive",started:performance.now(),duration:2000,direction:state.incomingDirection};
+  }
+  if(data.stage==="assembling"&&metrics.transferProgress>.72)document.body.classList.add("assembled-ui");
+  if(data.stage==="assembling"&&state.mapTransfer?.finished){await api("map/complete",{epoch});document.body.classList.add("assembled-ui","map-independent");}
   for(const action of data.commands||[]){if(action.sequence>after){cameraAction(action);after=action.sequence;}}
   if(!data.requested){if(n.isOpen)n.close();message("此地图窗口已结束");}
   else if(!state.mapTransfer||metrics.transferProgress>=1)message("独立地图 · 主屏对话与新任务不会改变此处内容");

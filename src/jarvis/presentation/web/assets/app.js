@@ -55,6 +55,8 @@ async function poll(){
   }
   revision=data.revision;
   updateHUD();
+  const wake=data.wake||{};$("wakeToggle").textContent=wake.state==="waiting"?"hi jarvis · 唤醒待机":wake.state==="loading"?"唤醒准备中":wake.state==="error"?"唤醒未就绪":wake.state==="paused"?"唤醒暂歇":"F10 · 开启唤醒";
+  $("wakeToggle").title=wake.message||"F10 开关本机唤醒；唤醒后说出指令，说完自动结束。";
   if(data.navigation?.id>lastNavigationId){
    lastNavigationId=data.navigation.id;
    getNavigation().then(map=>map.handle(data.navigation)).catch(error=>message(error.message,true));
@@ -96,6 +98,7 @@ addEventListener("keydown",async event=>{
   return;
  }
  if(!$("settingsLayer").hidden)return;
+ if(event.key==="F10"&&!event.repeat){event.preventDefault();$("wakeToggle").click();return;}
  if(event.key==="F9"&&!event.repeat){event.preventDefault();document.getElementById("cameraToggle").click();return;}
  if(event.key==="F2"){event.preventDefault();openSettings();return;}
  if(event.key==="F3"){
@@ -130,3 +133,5 @@ $("handHide").onclick=()=>{const collapsed=document.querySelector(".hand-preview
 $("mapDetach").onclick=()=>workspace.detach();$("mapReturn").onclick=()=>workspace.closeRemote();
 api("displays").then(displays=>{for(const display of displays){const option=document.createElement("option");option.value=display.id;option.textContent="屏幕 "+(display.id+1)+(display.primary?" · 主屏":"");$("mapDisplay").append(option);}}).catch(()=>{});
 addEventListener("pagehide",()=>{camera.stop();workspace.stop();});
+
+$("wakeToggle").onclick=async()=>{try{const config=await api("config");await api("wake",{enabled:config.WAKE_ENABLED!=="true"});}catch(error){message(error.message,true);}};

@@ -20,7 +20,7 @@ class Browser:
         profile=ROOT/"tmp"/("hand_browser_"+uuid.uuid4().hex);profile.mkdir()
         self.process=subprocess.Popen([str(browser_path()),"--headless=new","--no-first-run","--disable-extensions","--use-fake-ui-for-media-stream",
             "--remote-debugging-port=0","--user-data-dir="+str(profile),"--disk-cache-dir="+str(profile/"cache"),
-            "--crash-dumps-dir="+str(ROOT/"tmp"),"--window-size=1380,840",url],cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            "--crash-dumps-dir="+str(ROOT/"tmp"),"--window-size=1380,840","about:blank"],cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         browsers.append(self);self.cdp=None
         deadline=time.monotonic()+20
         while not (profile/"DevToolsActivePort").exists():
@@ -29,9 +29,16 @@ class Browser:
         port=int((profile/"DevToolsActivePort").read_text().splitlines()[0])
         with opener.open(f"http://127.0.0.1:{port}/json/list",timeout=3) as response:targets=json.load(response)
         self.cdp=DevTools(next(t["webSocketDebuggerUrl"] for t in targets if t["type"]=="page"))
-        self.cdp.call("Runtime.enable");self.cdp.call("Page.enable")
+        self.events=[];original_receive=self.cdp.receive
+        def receive():
+            value=original_receive()
+            if value.get("method") in ("Log.entryAdded","Runtime.exceptionThrown"):self.events.append(value)
+            return value
+        self.cdp.receive=receive
+        self.cdp.call("Log.enable");self.cdp.call("Runtime.enable");self.cdp.call("Page.enable")
         self.cdp.call("Page.addScriptToEvaluateOnNewDocument",{"source":"window.__handCheckErrors=[];addEventListener('error',e=>window.__handCheckErrors.push(e.message));addEventListener('unhandledrejection',e=>window.__handCheckErrors.push(String(e.reason?.message||e.reason)))"})
         self.cdp.evaluate("window.__handCheckErrors=[];addEventListener('error',e=>window.__handCheckErrors.push(e.message));addEventListener('unhandledrejection',e=>window.__handCheckErrors.push(String(e.reason?.message||e.reason)))")
+        self.cdp.call("Page.navigate",{"url":url})
     def wait(self,expression,seconds=15):
         deadline=time.monotonic()+seconds
         while not self.cdp.evaluate(expression):
@@ -49,6 +56,7 @@ class Browser:
 class WindowFixture:
     def displays(self):return displays()
     def open(self,*args):return {"multiple_displays":False,"display":{"id":0}}
+    def reveal(self):return {"visible":True}
     def close(self):pass
     def status(self):return {"error":""}
 
@@ -67,24 +75,31 @@ try:
     main.cdp.evaluate("""(()=>{
       const w=window.__workerCheck=new Worker('/features/hand/worker.js');window.__workerResult={stage:'starting'};
       w.onmessage=async e=>{if(e.data.type==='ready'){const c=new OffscreenCanvas(480,360);c.getContext('2d').fillRect(0,0,480,360);const bitmap=await createImageBitmap(c);w.postMessage({type:'frame',bitmap,timestamp:performance.now()},[bitmap]);}
-      else{window.__workerResult=e.data;if(e.data.type==='result'||e.data.type==='error')w.terminate();}};
+      else{window.__workerResult=e.data;if(e.data.type==='result')w.postMessage({type:'close'});if(e.data.type==='error')w.terminate();}};
       w.onerror=e=>window.__workerResult={type:'error',message:e.message};w.postMessage({type:'init'});
     })()""")
     main.wait("['result','error'].includes(window.__workerResult?.type)",30)
     worker=main.cdp.evaluate("window.__workerResult")
     if worker["type"]!="result":raise RuntimeError("Real hand runtime: "+worker.get("message",""))
-    report["worker"]={"real_model":True,"blank_frame_landmarks":len(worker["landmarks"]),"inference_ms":round(worker["milliseconds"],1)}
+    report["worker"]={"real_model":True,"blank_frame_landmarks":len(worker["landmarks"]),"inference_ms":round(worker["milliseconds"],1),"backend":worker.get("backend")}
     report["checks"].append("real local model and WASM inference in background worker")
     main.cdp.evaluate((ROOT/"tests/navigation_sdk_fixture.js").read_text(encoding="utf-8"))
-    main.wait("window.__sceneMetrics.mapMix===1&&window.__navigation.state.mapReady")
+    main.wait("window.__sceneMetrics.mapMix===1&&window.__navigation.state.mapReady&&window.__sceneMetrics.cityGeometryReady")
     main.cdp.evaluate("void window.__mapWorkspace.detach('right')")
     main.wait("!window.__mapWorkspace.opening")
-    replica=Browser(server.origin+"/map");replica.wait("window.__sceneMetrics?.ready&&window.__mapReplica?.state.mapReady")
+    replica=Browser(server.origin+"/map");replica.wait("window.__sceneMetrics?.ready&&window.__mapReplica?.state.mapReady",40)
     main.wait("window.__sceneMetrics.transferPhase==='depart'",8)
     report["departure_direction"]=main.cdp.evaluate("window.__sceneMetrics.transferDirection")
-    time.sleep(.5);main.cdp.screenshot(ROOT/"docs/hand_transfer_depart.png");replica.cdp.screenshot(ROOT/"docs/hand_transfer_arrive.png")
+    assert replica.cdp.evaluate("document.body.classList.contains('transfer-staging')"),"Secondary must remain hidden during primary departure"
+    assert state.map_workspace.stage=="departing"
+    main.cdp.screenshot(ROOT/"docs/hand_transfer_depart.png")
+    replica.wait("window.__sceneMetrics.transferPhase==='arrive'",12)
+    replica.wait("window.__sceneMetrics.assemblyParticles>100",5)
+    report["assembly_particles"]=replica.cdp.evaluate("window.__sceneMetrics.assemblyParticles")
+    report["source_first_ordering"]=True
+    replica.cdp.screenshot(ROOT/"docs/hand_transfer_arrive.png")
     main.wait("window.__sceneMetrics.mapMix===0&&window.__sceneMetrics.transferPhase==='idle'",12)
-    replica.wait("window.__sceneMetrics.mapMix===1&&window.__sceneMetrics.transferPhase==='idle'",12)
+    replica.wait("window.__sceneMetrics.mapMix===1&&window.__sceneMetrics.transferPhase==='idle'&&document.body.classList.contains('map-independent')",12)
     assert main.cdp.evaluate("!window.__navigation.isOpen")
     assert replica.cdp.evaluate("document.getElementById('voiceTrigger')===null && document.getElementById('command')===null")
     report["checks"].append("directional particle departure and destination assembly; primary returns to energy")
@@ -120,7 +135,7 @@ try:
         main.wait("!window.__handCamera.active||window.__handCamera.lastFrame>0",35)
         if main.cdp.evaluate("window.__handCamera.active"):
             time.sleep(2)
-            report["camera"]={"opened":True,"local_frames_processed":True,"human_gesture_accuracy":"requires user hand demonstration", "primary_fps":main.cdp.evaluate("window.__sceneMetrics.fps"),"secondary_fps":replica.cdp.evaluate("window.__sceneMetrics.fps")}
+            report["camera"]={"opened":True,"local_frames_processed":True,"human_gesture_accuracy":"requires user hand demonstration", "primary_fps":main.cdp.evaluate("window.__sceneMetrics.fps"),"secondary_fps":replica.cdp.evaluate("window.__sceneMetrics.fps"),"runtime":main.cdp.evaluate("window.__handCamera.metrics")}
         else:report["camera"]={"opened":False,"reason":main.cdp.evaluate("document.getElementById('handStatus').textContent")}
         main.cdp.evaluate("window.__handCamera.stop()")
         assert main.cdp.evaluate("!window.__handCamera.stream&&!window.__handCamera.worker")
@@ -134,7 +149,10 @@ try:
         main.cdp.evaluate("void window.__navigation.open({id:890,action:'route',origin:'测试起点',destination:'测试终点',city:'苏州',mode:'driving'})")
         main.wait("window.__navigation.state.mapReady&&window.__sceneMetrics.mapMix===1")
         main.cdp.evaluate("void window.__mapWorkspace.detach('right')")
-        main.wait("window.__mapWorkspace.remote.detached&&window.__sceneMetrics.mapMix===0",25)
+        main.wait("window.__mapWorkspace.remote.stage==='departing'",45)
+        assert not native.visible,"Destination must stay hidden until source departure ends"
+        main.wait("window.__mapWorkspace.remote.stage==='independent'&&window.__sceneMetrics.mapMix===0",50)
+        assert native.visible
         handle=find_map_window(server.origin);assert handle
         report["native_window"]={"ok":True,"physical_monitor_count":report["monitors"],"fullscreen":False}
         native._close(handle)
@@ -150,7 +168,11 @@ except Exception as exc:
     report["error"]=str(exc);report["debug"]=[]
     for browser in browsers:
         if browser.cdp:
-            try:report["debug"].append(browser.cdp.evaluate("({url:location.pathname,ready:window.__sceneMetrics?.ready,mapReady:window.__navigation?.state.mapReady,status:document.getElementById('replicaStatus')?.textContent,remote:window.__mapWorkspace?.remote,lastError:window.__mapWorkspace?.lastError,renderError:window.__renderError,errors:window.__handCheckErrors})"))
+            try:
+                report["debug"].append({"events":browser.events})
+                browser.cdp.evaluate("void import('/map.js').then(()=>window.__importStatus='ok').catch(e=>window.__importStatus=String(e.stack||e))" ) if browser.cdp.evaluate("location.pathname==='/map'") else None
+                time.sleep(1)
+                report["debug"].append(browser.cdp.evaluate("({moduleStatus:window.__importStatus,doc:document.readyState,resources:performance.getEntriesByType('resource').map(e=>e.name.split('/').slice(3).join('/')).slice(-12),url:location.pathname,ready:window.__sceneMetrics?.ready,mapReady:window.__navigation?.state.mapReady,status:document.getElementById('replicaStatus')?.textContent,remote:window.__mapWorkspace?.remote,lastError:window.__mapWorkspace?.lastError,renderError:window.__renderError,errors:window.__handCheckErrors})"))
             except Exception:pass
 finally:
     for browser in reversed(browsers):

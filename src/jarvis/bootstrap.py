@@ -4,6 +4,7 @@ from jarvis.application.ports import SessionServices
 from jarvis.application.session import DesktopState
 from jarvis.infrastructure.http.openai_compatible import CloudAPI
 from jarvis.infrastructure.audio.service import Audio, devices
+from jarvis.infrastructure.audio.wake import WakeListener
 from jarvis.infrastructure.config.env_file import save_settings
 from jarvis.infrastructure.persistence.sqlite import Store
 from jarvis.infrastructure.weather.provider import Weather
@@ -19,7 +20,7 @@ def create_state(settings: Settings, store=None, *, services: SessionServices | 
     if services is None:
         services=SessionServices(store=store if store is not None else Store(), audio=Audio(),
             cloud_factory=CloudAPI, save_settings=lambda value: save_settings(value),
-            weather=Weather(settings.WEATHER_CITY), telemetry=Telemetry())
+            weather=Weather(settings.WEATHER_CITY), telemetry=Telemetry(),wake_factory=WakeListener)
     elif store is not None:
         raise ValueError("提供 services 后不能再单独指定 store。")
     return DesktopState(settings,services)
@@ -34,4 +35,5 @@ def create_server(state, *, services: HttpServices | None = None):
 def run_desktop(settings, config_error=None):
     state=create_state(settings)
     server=create_server(state)
+    state.start_voice()
     return run(state,server,config_error)

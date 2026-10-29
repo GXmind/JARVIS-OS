@@ -84,7 +84,7 @@ class DesktopServer:
             def authorized(self):
                 role=self.role()
                 if role=="primary":return True
-                allowed={"GET":{"/api/map/workspace"},"POST":{"/api/map/ready","/api/map/close","/api/city/context"}}
+                allowed={"GET":{"/api/map/workspace"},"POST":{"/api/map/ready","/api/map/arrive","/api/map/complete","/api/map/close","/api/city/context"}}
                 return role=="map" and urlsplit(self.path).path in allowed.get(self.command,set())
             def do_GET(self):
                 path=urlsplit(self.path).path
@@ -185,12 +185,20 @@ class DesktopServer:
                         self.respond(200,result);return
                     elif action=="/api/map/ready":
                         self.respond(200,outer.state.map_workspace.replica_ready(values.get("epoch"),values.get("revision")));return
+                    elif action in ("/api/map/depart","/api/map/dispatch","/api/map/arrive","/api/map/complete"):
+                        event=action.rsplit("/",1)[-1]
+                        if self.role()=="map" and event not in ("arrive","complete"):raise ServiceError("此窗口不能发送该阶段。")
+                        result=outer.state.map_workspace.transition(values.get("epoch"),event)
+                        if event=="dispatch" and outer.services.map_windows:outer.services.map_windows.reveal()
+                        self.respond(200,result);return
                     elif action=="/api/map/gesture":
                         self.respond(200,outer.state.map_workspace.enqueue(values));return
                     elif action=="/api/map/close":
                         if self.role()=="map" and values.get("epoch")!=outer.state.map_workspace.epoch:raise ServiceError("地图窗口已过期。")
                         outer.state.map_workspace.close_map()
                         if outer.services.map_windows:outer.services.map_windows.close()
+                    elif action=="/api/wake":
+                        outer.state.set_wake(values.get("enabled"))
                     elif action=="/api/send":
                         outer.state.send(values.get("text",""))
                     elif action=="/api/record":

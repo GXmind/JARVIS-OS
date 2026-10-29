@@ -16,7 +16,7 @@ class MapWorkspace:
         self.lock=threading.RLock();self.clock=clock
         self.revision=0;self.snapshot=None;self.transfer_snapshot=None;self.transfer_revision=0;self.epoch=0
         self.requested=False;self.detached=False;self.last_seen=0
-        self.commands=[];self.sequence=0;self.direction={"x":1,"y":0}
+        self.stage="idle";self.stage_started=0;self.commands=[];self.sequence=0;self.direction={"x":1,"y":0}
 
     def publish(self,snapshot):
         if not isinstance(snapshot,dict) or not isinstance(snapshot.get("state"),dict):raise ServiceError("地图状态格式无效。")
@@ -35,14 +35,14 @@ class MapWorkspace:
         with self.lock:
             return {"revision":self.revision,"transfer_revision":self.transfer_revision,"epoch":self.epoch,
                 "requested":self.requested,"detached":self.detached,"connected":self.requested and self.clock()-self.last_seen<12,
-                "direction":dict(self.direction)}
+                "direction":dict(self.direction),"stage":self.stage,"stage_elapsed":max(0,self.clock()-self.stage_started)}
 
     def request_detach(self,direction=None):
         with self.lock:
             if self.requested:raise ServiceError("副屏已有独立地图，请先在副屏关闭后再传送。")
             if not self.snapshot or not self.snapshot["state"].get("mapReady"):raise ServiceError("请先完成地图加载，再传送到另一屏。")
             self.epoch+=1;self.transfer_revision+=1;self.requested=True;self.detached=False;self.last_seen=self.clock();self.commands=[]
-            self.transfer_snapshot=json.loads(json.dumps(self.snapshot))
+            self.transfer_snapshot=json.loads(json.dumps(self.snapshot));self.stage="preparing";self.stage_started=self.clock()
             self.direction={"x":0 if direction in ("up","down") else -1 if direction=="left" else 1,"y":1 if direction=="up" else -1 if direction=="down" else 0}
             return self.metadata()
 
@@ -60,7 +60,19 @@ class MapWorkspace:
     def replica_ready(self,epoch,revision):
         with self.lock:
             if not self.requested or epoch!=self.epoch or revision!=self.transfer_revision:raise ServiceError("地图窗口已过期，请重新传送。")
-            self.last_seen=self.clock();self.detached=True
+            self.last_seen=self.clock()
+            if self.stage=="preparing":self.stage="prepared";self.stage_started=self.clock()
+            return self.metadata()
+
+    def transition(self,epoch,event):
+        with self.lock:
+            expected={"depart":("prepared","departing"),"dispatch":("departing","in_transit"),"arrive":("in_transit","assembling"),"complete":("assembling","independent")}
+            if event not in expected or not self.requested or epoch!=self.epoch:raise ServiceError("地图传送阶段已过期。")
+            before,after=expected[event]
+            if self.stage==after:return self.metadata()
+            if self.stage!=before:raise ServiceError("地图传送阶段尚未就绪。")
+            self.stage=after;self.stage_started=self.clock()
+            if event in ("dispatch","arrive","complete"):self.detached=True
             return self.metadata()
 
     def patch_view(self,values):
@@ -83,7 +95,7 @@ class MapWorkspace:
         elif kind=="end":payload={"type":"end","commit":True}
         else:raise ServiceError("手势操作无效。")
         with self.lock:
-            if not self.detached or values.get("epoch")!=self.epoch:raise ServiceError("副屏地图尚未连接或手势已过期。")
+            if self.stage!="independent" or values.get("epoch")!=self.epoch:raise ServiceError("副屏地图尚未连接或手势已过期。")
             self.sequence+=1;payload["sequence"]=self.sequence;self.commands.append(payload);self.commands=self.commands[-32:]
             return {"ok":True,"sequence":self.sequence}
 
@@ -93,5 +105,5 @@ class MapWorkspace:
         """Close only the independent map; primary content remains untouched."""
         with self.lock:
             if self.requested or self.detached:self.epoch+=1
-            self.requested=False;self.detached=False;self.commands=[];self.transfer_snapshot=None
+            self.requested=False;self.detached=False;self.commands=[];self.transfer_snapshot=None;self.stage="closed"
             return self.metadata()

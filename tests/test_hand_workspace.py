@@ -15,9 +15,13 @@ VIEW={"cityYaw":0,"cityPitch":.62,"cityZoom":1,"cityPanX":0,"cityPanY":0,"cityHe
 def snapshot(identifier=2):return {"state":{**VIEW,"mapOpen":True,"mapReady":True},"command":{"id":identifier},"options":[]}
 class WorkspaceTests(unittest.TestCase):
  def setUp(self):self.now=0;self.w=MapWorkspace(lambda:self.now);self.w.publish(snapshot())
- def connected(self):self.w.request_detach();self.w.replica_ready(self.w.epoch,self.w.transfer_revision)
+ def connected(self):
+  self.w.request_detach();self.w.replica_ready(self.w.epoch,self.w.transfer_revision)
+  for event in ("depart","dispatch","arrive","complete"):self.w.transition(self.w.epoch,event)
  def test_primary_keeps_map_until_destination_ready(self):
-  self.w.request_detach();self.assertFalse(self.w.detached);self.w.replica_ready(self.w.epoch,1);self.assertTrue(self.w.detached)
+  self.w.request_detach();self.assertFalse(self.w.detached);self.w.replica_ready(self.w.epoch,1);self.assertFalse(self.w.detached)
+  self.assertEqual(self.w.stage,"prepared");self.w.transition(self.w.epoch,"depart");self.assertFalse(self.w.detached)
+  self.w.transition(self.w.epoch,"dispatch");self.assertTrue(self.w.detached)
  def test_primary_new_route_never_replaces_transferred_content(self):
   self.connected();self.w.publish(snapshot(3));self.assertEqual(self.w.replica_poll()["snapshot"]["command"]["id"],2)
  def test_primary_closing_navigation_does_not_close_independent_map(self):
@@ -56,6 +60,17 @@ class WorkspaceTests(unittest.TestCase):
   with self.assertRaises(ServiceError):self.w.request_detach()
  def test_secondary_close_does_not_restore_old_primary_content(self):
   self.connected();self.w.publish(snapshot(3));self.w.close_map();self.assertEqual(self.w.snapshot["command"]["id"],3);self.assertIsNone(self.w.transfer_snapshot)
+ def test_out_of_order_stages_cannot_reveal_map(self):
+  self.w.request_detach()
+  for event in ("dispatch","arrive","complete"):
+   with self.assertRaises(ServiceError):self.w.transition(self.w.epoch,event)
+  self.assertFalse(self.w.detached)
+ def test_late_ready_does_not_rewind_independent_map(self):
+  self.connected();self.w.replica_ready(self.w.epoch,self.w.transfer_revision);self.assertEqual(self.w.stage,"independent")
+ def test_gestures_wait_until_assembly_finished(self):
+  self.w.request_detach();self.w.replica_ready(self.w.epoch,self.w.transfer_revision)
+  for event in ("depart","dispatch","arrive"):self.w.transition(self.w.epoch,event)
+  with self.assertRaises(ServiceError):self.w.enqueue({"epoch":self.w.epoch,"action":{"type":"end"}})
 class DisplaySelectionTests(unittest.TestCase):
  def test_negative_coordinate_left_monitor_and_direction(self):
   rows=[{"id":0,"left":0,"top":0,"width":1920,"height":1080,"primary":True},{"id":1,"left":-1920,"top":0,"width":1920,"height":1080,"primary":False},{"id":2,"left":1920,"top":0,"width":2560,"height":1440,"primary":False}]
@@ -89,7 +104,7 @@ class ReplicaHTTPTests(unittest.TestCase):
  def call(self,path,body=None,map_role=False):
   return self.opener.open(request.Request(self.server.origin+path,data=None if body is None else json.dumps(body).encode(),headers={"X-Jarvis-Token":self.server.map_token if map_role else self.server.token,"Content-Type":"application/json"}),timeout=3)
  def test_replica_cannot_record_send_configure_stop_quit_or_replace_seed(self):
-  for path in ("/api/record","/api/send","/api/stop","/api/config","/api/close","/api/map/publish","/api/map/view","/api/map/detach","/api/map/gesture"):
+  for path in ("/api/wake","/api/map/depart","/api/map/dispatch","/api/record","/api/send","/api/stop","/api/config","/api/close","/api/map/publish","/api/map/view","/api/map/detach","/api/map/gesture"):
    with self.subTest(path=path):
     with self.assertRaises(error.HTTPError) as caught:self.call(path,{},True)
     self.assertEqual(caught.exception.code,403);caught.exception.close()

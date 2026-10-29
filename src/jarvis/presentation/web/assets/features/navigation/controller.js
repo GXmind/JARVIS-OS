@@ -275,14 +275,14 @@ export class NavigationController{
  updateFrame(){
   const data=this.state.cityScene;if(!data)return;
   const frame=data.view==="overview"?routeFrame(data.path,data.extent):{origin:data.focus||data.path[0],extent:data.extent};
-  this.state.cityFrame=frame;
+  if(!this.state.cityPendingReset)this.state.cityFrame=frame;
  }
  setView(view){
   if(!["start","end","overview"].includes(view))return;
   clearTimeout(this.viewTimer);this.state.cityView=view;this.state.cityFocus=null;resetMapView(this.state);
   for(const button of document.querySelectorAll("[data-city-view]"))button.classList.toggle("selected",button.dataset.cityView===view);
   document.getElementById("cityViewLabel").textContent=view==="overview"?"全程路线 · 含起点与终点":view==="end"?"终点街区 · 三维城市":"起点街区 · 三维城市";
-  if(this.isOpen&&this.path.length)this.showScene(this.path,{},this.requestVersion);
+  if(this.isOpen&&this.path.length)this.showScene(this.path,this.currentContext||{},this.requestVersion);
  }
  requestCityContext(body,sceneId){
   return new Promise((resolve,reject)=>{
@@ -311,8 +311,7 @@ export class NavigationController{
   if(!this.isOpen||!this.path.length||!this.state.cityFrame)return;
   const next=rebaseMapView(this.state,this.state.cityFrame);
   this.state.cityFocus=next.origin;this.state.cityBrowseExtent=next.extent;this.state.cityView="browse";
-  this.state.cityFrame={origin:next.origin,extent:next.extent};
-  this.state.cityPanX=0;this.state.cityPanY=0;this.state.cityZoom=1;
+  this.state.cityPendingReset={panX:this.state.cityPanX||0,panY:this.state.cityPanY||0,zoom:this.state.cityZoom||1};
   for(const button of document.querySelectorAll("[data-city-view]"))button.classList.remove("selected");
   document.getElementById("cityViewLabel").textContent="沿途浏览 · 拖动继续查看";
   this.showScene(this.path,this.currentContext||{},this.requestVersion);

@@ -3,6 +3,7 @@ export const DEFAULT_EXTENT=1600;
 export const DEFAULT_HEIGHT_SCALE=16;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 export function resetMapView(state){
+ delete state.cityPendingReset;
  state.cityYaw=0;state.cityPitch=.62;state.cityZoom=1;state.cityPanX=0;state.cityPanY=0;
  state.cityDragMode=state.cityDragMode||"pan";
 }
@@ -75,7 +76,7 @@ export function bindMapControls(canvas,state,options={}){
   if(!pointers.size&&panDirty){panDirty=false;options.onViewEnd?.();}
  };
  canvas.addEventListener("pointerup",end);canvas.addEventListener("pointercancel",end);
- canvas.addEventListener("lostpointercapture",event=>{pointers.delete(event.pointerId);begin();});
+ canvas.addEventListener("lostpointercapture",event=>{pointers.delete(event.pointerId);begin();if(!pointers.size&&panDirty){panDirty=false;options.onViewEnd?.();}});
  canvas.addEventListener("contextmenu",event=>{if(state.mapReady)event.preventDefault();});
  canvas.addEventListener("wheel",event=>{if(state.mapReady&&!state.mapDetached){event.preventDefault();zoomView(state,event.deltaY);options.onZoom?.();}},{passive:false});
  canvas.addEventListener("dblclick",event=>{if(state.mapReady&&!state.mapDetached){event.preventDefault();resetMapView(state);}});

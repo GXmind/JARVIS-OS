@@ -55,7 +55,7 @@ try:
       const context={status:'synthetic-stress-fixture',buildings,roads:[{kind:'primary',path:[[120.59,31.31],[120.62,31.31]]}]};
       n.state.cityScene={...n.state.cityScene,context};n.state.cityRevision++;
     })()""")
-    time.sleep(.5)
+    wait_for("window.__sceneMetrics.cityBuildRevision===window.__navigation.state.cityRevision",15,"Latest city geometry did not commit")
     cdp.evaluate("""(()=>{
       const gl=document.getElementById('space').getContext('webgl2'),create=gl.createBuffer,remove=gl.deleteBuffer;
       window.__bufferPressure={created:0,deleted:0};
@@ -71,12 +71,15 @@ try:
         if index%10==0:
             metric=cdp.evaluate("window.__sceneMetrics")
             report["pressure"].append({k:metric.get(k) for k in ("frames","fps","gpuGeometries","gpuTextures","gpuPrograms","postPasses")})
-    time.sleep(2)
+    wait_for("window.__sceneMetrics.cityBuildRevision===window.__navigation.state.cityRevision",15,"Final geometry job did not finish")
+    time.sleep(1)
     after=cdp.evaluate("window.__sceneMetrics")
     report["final_gpu"]={k:after.get(k) for k in ("gpuGeometries","gpuTextures","gpuPrograms")}
     report["buffer_allocations"]=cdp.evaluate("window.__bufferPressure")
     report["synthetic_buildings"]=after["cityBuildings"]
     report["particles"]=after["cityParticles"]
+    report["worker_build_ms"]=after.get("cityBuildMs")
+    report["latest_revision_committed"]=after.get("cityBuildRevision")==cdp.evaluate("window.__navigation.state.cityRevision")
     assert after["cityBuildings"]>=400
     assert report["buffer_allocations"]["created"]<60,"Buffers are being reallocated for each view"
     assert after["gpuGeometries"]<=base_metric["gpuGeometries"]+2

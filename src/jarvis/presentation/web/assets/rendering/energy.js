@@ -1,3 +1,4 @@
+import {createAssembly} from "./assembly.js";
 import {transferFrame} from "./transfer.js";
 import {createParticleCity} from "./city.js";
 import * as THREE from "../vendor/three.module.js";
@@ -36,7 +37,7 @@ export function createVisual(canvas,state,metrics){
  metrics.engine="Three.js r"+THREE.REVISION+" / WebGL2";metrics.particles=18300;
  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,1,.1,60);
  camera.position.set(0,.05,6.8);camera.lookAt(0,0,0);
- const particleCity=createParticleCity(THREE,scene,camera);
+ const particleCity=createParticleCity(THREE,scene,camera),assembly=createAssembly(THREE);
  const uniforms={uTime:{value:0},uPhase:{value:0},uLevel:{value:0},uDpr:{value:1},uMapMix:{value:0}};
  const ribbons=new THREE.Group();scene.add(ribbons);const geometry=makeRibbonGeometry();
  for(let i=0;i<6;i++){
@@ -84,9 +85,11 @@ export function createVisual(canvas,state,metrics){
   metrics.resolution=[size.x,size.y];metrics.pixelRatio=dpr;
  }
  function renderPost(material,target){quad.material=material;renderer.setRenderTarget(target);renderer.render(postScene,postCamera);}
+ let frameRequest=null,hiddenTimer=null;
+ function schedule(){if(state.forceRender&&(document.hidden||state.mapPreparing))hiddenTimer=setTimeout(()=>draw(performance.now()),50);else frameRequest=requestAnimationFrame(draw);}
  function draw(stamp){
-  if(!running)return;requestAnimationFrame(draw);
-  if(document.hidden){last=stamp;previous=stamp;return;}
+  if(!running)return;schedule();
+  if(document.hidden&&!state.forceRender){last=stamp;previous=stamp;return;}
   const activeBudget=state.mapReady&&!state.mapDetached?Math.max(budget,1000/24):budget;
   const delta=stamp-last;if(delta<activeBudget-1)return;last=stamp-(delta%activeBudget);
   const begin=performance.now(),dt=Math.min((stamp-previous)/1000,.1);previous=stamp;elapsed+=dt;
@@ -96,9 +99,10 @@ export function createVisual(canvas,state,metrics){
   if(state.mapTransfer&&!transfer.active&&!state.mapTransfer.finished){
    state.mapTransfer.finished=true;mapMix=state.mapTransfer.phase==="depart"?0:1;
   }
-  if(transfer.active){
+  if(state.mapPreparing){mapMix=1;cityMix=1;}
+  else if(transfer.active){
    mapMix=transfer.energyMix;cityMix=1;
-   if(transfer.phase==="depart")renderState={...state,...state.mapTransfer.source,cityRevision:-1000000-state.mapTransfer.started,mapTransfer:state.mapTransfer};
+   if(transfer.phase==="depart")renderState={...state,...state.mapTransfer.source,mapTransfer:state.mapTransfer};
   }else{
    const target=Number(!!state.mapReady);
    mapMix=THREE.MathUtils.clamp(mapMix+Math.sign(target-mapMix)*dt/2.6,0,1);cityMix=mapMix;
@@ -127,6 +131,7 @@ export function createVisual(canvas,state,metrics){
   metrics.gpuPrograms=renderer.info.programs?.length||0;
   combine.uniforms.uBloomGain.value=.65*(1-THREE.MathUtils.smoothstep(mapMix,0,.45));
   combine.uniforms.uExposure.value=(1.15+phase*.04+level*.035)*(1-mapMix)+.95*mapMix;renderPost(combine,null);
+  assembly.update(state,transfer,width,height,dpr,metrics);assembly.render(renderer);
   const cost=performance.now()-begin;
   metrics.frames=(metrics.frames||0)+1;metrics.meanMs=(metrics.meanMs||cost)*.95+cost*.05;
   metrics.triangles=renderer.info.render.triangles;metrics.phase=state.phase;metrics.ready=!window.__renderError;metrics.drawCalls=renderer.info.render.calls;frames++;
@@ -134,8 +139,8 @@ export function createVisual(canvas,state,metrics){
   if(delta>70)slow++;else slow=Math.max(0,slow-1);
   if(slow>30 && dpr>1){dpr=1;resize();slow=0;}
  }
- resize();addEventListener("resize",resize);requestAnimationFrame(draw);
+ resize();addEventListener("resize",resize);schedule();
  canvas.addEventListener("webglcontextlost",event=>{event.preventDefault();metrics.ready=false;window.__renderError="WebGL context lost";});
  return {setLowQuality(low){state.cityParticleBudget=low?16000:36000;budget=1000/(low?20:30);dpr=low?1:Math.min(devicePixelRatio||1,1.25);resize();},
-  stop(){running=false;removeEventListener("resize",resize);renderer.dispose();sceneTarget.dispose();ping.dispose();pong.dispose();}};
+  stop(){running=false;cancelAnimationFrame(frameRequest);clearTimeout(hiddenTimer);assembly.close();removeEventListener("resize",resize);particleCity.close();renderer.dispose();sceneTarget.dispose();ping.dispose();pong.dispose();}};
 }

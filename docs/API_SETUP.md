@@ -97,3 +97,7 @@ AUTO_SPEAK="true"
 ## 地图显示设置
 
 地图更新模块提供 MAP_VIEW_METERS（600–5000，默认1600）与 MAP_HEIGHT_SCALE（1–32，默认16），用于局部街区尺度与楼高强调，不需要另申请 API。高度强调不是地理数据源的实际高度。
+
+## 本机唤醒与中文语音识别
+
+“Hi Jarvis”使用本机 Vosk 关键词识别，无需申请唤醒 API。运行 scripts/install_wake.cmd 后使用；F10 开关，F2 配置等待和静音时限。唤醒后中文指令仍交给已配置的独立 ASR，不能把仅支持文本对话的模型填入语音识别栏。见 [语音唤醒](voice-wake.md)。

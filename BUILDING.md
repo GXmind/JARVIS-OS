@@ -126,3 +126,7 @@ npm test
 ## 可选摄像头手势
 
 运行 scripts/install_hand.cmd 安装固定版本的浏览器识别库与模型到根目录 cache/hand-runtime；不是 pip 依赖。相机默认关闭，按 F9 开启。可通过 scripts/check_hand.py 检查真实 WASM 与双窗口；--camera --native-window 另测真实设备与原生窗口，不保存画面。详见 [手势地图](docs/hand-map.md)。
+
+## 可选自动唤醒
+
+运行 `scripts/install_wake.cmd` 安装本机关键词模型和 requirements-wake.txt；自动唤醒依赖 Vosk，并非标准库功能。详见 [语音唤醒](docs/voice-wake.md)。中文指令仍需单独配置 ASR。可运行 `scripts/check_wake.py --microphone`，它不调用云端。
