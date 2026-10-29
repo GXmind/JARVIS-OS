@@ -150,4 +150,4 @@ domain/voice.py 是纯唤醒匹配、置信度和语音端点规则；infrastruc
 
 本机 HTTP 服务器将待接入队列设为64，容纳双窗口并行模块导入与状态轮询的短时突发，服务仍只绑定127.0.0.1；这不是新的公网服务或取消鉴权。
 
-[Unity 与便携设计](unity-portable-roadmap.md) 讨论保留协议/后端、替换渲染与设备适配器的分阶段方案。当前并未添加 Unity 客户端、设备网关、GNSS 或 OTA。
+[桌面与便携修订方案](client-and-portable-architecture.md) 将原生视觉客户端、任务/能力服务、Windows Agent、家庭网关和便携设备分别设计。便携端裁剪功能但保留粒子三维风格，不绑定 Unity。旧 [Unity 与便携分析](unity-portable-roadmap.md) 留作存档。当前尚未添加原生客户端、家居/电脑控制适配器、设备网关、GNSS 或 OTA。
