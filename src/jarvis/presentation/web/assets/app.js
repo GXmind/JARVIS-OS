@@ -115,7 +115,7 @@ addEventListener("keydown",async event=>{
  if(event.key==="F8"&&!event.repeat){
   event.preventDefault();try{await api("record",{});}catch(error){message(error.message,true);}return;
  }
- if(event.key==="F4"){event.preventDefault();visualPrompt=true;document.querySelector("#command label").textContent="自由绘制 · 描述主体、色彩、构图和动作";$("thought").placeholder="例如：星河中的鲸鱼，尾巴缓慢摆动，周围有三颗金色星星";$("command").hidden=false;$("thought").focus();return;}
+ if(event.key==="F4"&&!event.altKey&&!event.ctrlKey&&!event.metaKey){event.preventDefault();visualPrompt=true;document.querySelector("#command label").textContent="自由绘制 · 描述主体、色彩、构图和动作";$("thought").placeholder="例如：星河中的鲸鱼，尾巴缓慢摆动，周围有三颗金色星星";$("command").hidden=false;$("thought").focus();return;}
  if(event.key==="Enter"&&$("command").hidden){visualPrompt=false;document.querySelector("#command label").textContent="告诉 JARVIS";
   event.preventDefault();$("subtitle").classList.remove("visible");$("command").hidden=false;$("thought").focus();
  }
